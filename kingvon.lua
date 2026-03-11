@@ -77,16 +77,11 @@ local function tToC3(t) if type(t)=="table" and t.R then return Color3.fromRGB(t
 
 local PM = { _open=nil, _gui=nil }
 
-function PM:Setup()
-	local g = New("ScreenGui",{
-		Name="KVH_Popups", ResetOnSpawn=false,
-		ZIndexBehavior=Enum.ZIndexBehavior.Sibling,
-		DisplayOrder=100,
-		IgnoreGuiInset=true,
-	})
-	pcall(function() g.Parent = game:GetService("CoreGui") end)
-	if not g.Parent then g.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
-	self._gui = g
+function PM:Setup(sg)
+	-- Reuse the same ScreenGui as the main UI.
+	-- A second ScreenGui causes silent crashes on some executors.
+	-- Popups get a high ZIndex so they always render on top.
+	self._gui = sg
 end
 
 function PM:Open(popup, anchor)
@@ -178,13 +173,13 @@ function Library.new(cfg)
 
 	-- Main ScreenGui
 	local sg = New("ScreenGui",{Name="KingVonHook",ResetOnSpawn=false,
-		ZIndexBehavior=Enum.ZIndexBehavior.Sibling, DisplayOrder=5, IgnoreGuiInset=true})
+		ZIndexBehavior=Enum.ZIndexBehavior.Sibling})
 	pcall(function() sg.Parent=game:GetService("CoreGui") end)
 	if not sg.Parent then sg.Parent=Players.LocalPlayer:WaitForChild("PlayerGui") end
 	self.ScreenGui = sg
 
 	-- Initialize popup system with its own ScreenGui
-	PM:Setup()
+	PM:Setup(sg)
 
 	-- ─── Main window ───────────────────────────────────────
 	local main = New("Frame",{
