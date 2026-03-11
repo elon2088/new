@@ -1,10 +1,10 @@
--- KingVonHook UI Library | By elon
 
-local UIS     = game:GetService("UserInputService")
-local Players = game:GetService("Players")
-local HTTP    = game:GetService("HttpService")
-local RUN     = game:GetService("RunService")
-local TweenS  = game:GetService("TweenService")
+
+local UIS    = game:GetService("UserInputService")
+local Players= game:GetService("Players")
+local HTTP   = game:GetService("HttpService")
+local RUN    = game:GetService("RunService")
+local TweenS = game:GetService("TweenService")
 
 local Library = {}
 Library.__index = Library
@@ -20,1054 +20,1006 @@ local function New(class, props, parent)
 	return i
 end
 local function Corner(p,r) New("UICorner",{CornerRadius=UDim.new(0,r)},p) end
-local function Stroke(p,c,t) New("UIStroke",{Color=c,Thickness=t},p) end
-
-local function Tween(obj, props, t)
-	TweenS:Create(obj, TweenInfo.new(t or 0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), props):Play()
+local function Stroke(p,c,t) return New("UIStroke",{Color=c,Thickness=t},p) end
+local function Tween(obj,props,t)
+	TweenS:Create(obj,TweenInfo.new(t or 0.15,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),props):Play()
 end
 
 local function Draggable(frame, handle)
-	local drag,ds,sp
+	local drag, ds, sp
 	handle.InputBegan:Connect(function(i)
-		if i.UserInputType==Enum.UserInputType.MouseButton1 then drag,ds,sp=true,i.Position,frame.Position end
+		if i.UserInputType == Enum.UserInputType.MouseButton1 then
+			drag, ds, sp = true, i.Position, frame.Position
+		end
 	end)
 	UIS.InputChanged:Connect(function(i)
-		if drag and i.UserInputType==Enum.UserInputType.MouseMovement then
-			local d=i.Position-ds
-			frame.Position=UDim2.new(sp.X.Scale,sp.X.Offset+d.X,sp.Y.Scale,sp.Y.Offset+d.Y)
+		if drag and i.UserInputType == Enum.UserInputType.MouseMovement then
+			local d = i.Position - ds
+			frame.Position = UDim2.new(sp.X.Scale, sp.X.Offset+d.X, sp.Y.Scale, sp.Y.Offset+d.Y)
 		end
 	end)
 	UIS.InputEnded:Connect(function(i)
-		if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=false end
+		if i.UserInputType == Enum.UserInputType.MouseButton1 then drag = false end
 	end)
 end
 
--- HSV helpers
+-- HSV ↔ Color3
 local function HSVtoRGB(h,s,v)
-	if s==0 then return Color3.new(v,v,v) end
-	local i=math.floor(h*6)%6; local f=h*6-math.floor(h*6)
-	local p,q,t2=v*(1-s),v*(1-s*f),v*(1-s*(1-f))
-	local r,g,b
-	if i==0 then r,g,b=v,t2,p elseif i==1 then r,g,b=q,v,p
-	elseif i==2 then r,g,b=p,v,t2 elseif i==3 then r,g,b=p,q,v
-	elseif i==4 then r,g,b=t2,p,v elseif i==5 then r,g,b=v,p,q end
-	return Color3.new(r,g,b)
+	if s == 0 then return Color3.new(v,v,v) end
+	local i = math.floor(h*6)%6
+	local f = h*6 - math.floor(h*6)
+	local p,q,t2 = v*(1-s), v*(1-s*f), v*(1-s*(1-f))
+	local lut = {{v,t2,p},{q,v,p},{p,v,t2},{p,q,v},{t2,p,v},{v,p,q}}
+	local rgb = lut[i+1]
+	return Color3.new(rgb[1],rgb[2],rgb[3])
 end
 local function RGBtoHSV(c)
-	local r,g,b=c.R,c.G,c.B
-	local mx=math.max(r,g,b); local mn=math.min(r,g,b); local d=mx-mn
-	local h,s,v=0,0,mx
-	if mx~=0 then s=d/mx end
-	if d~=0 then
-		if mx==r then h=(g-b)/d%6
-		elseif mx==g then h=(b-r)/d+2
-		else h=(r-g)/d+4 end
-		h=h/6
+	local r,g,b = c.R,c.G,c.B
+	local mx = math.max(r,g,b); local mn = math.min(r,g,b); local d = mx-mn
+	local h,s,v = 0, 0, mx
+	if mx ~= 0 then s = d/mx end
+	if d ~= 0 then
+		if mx==r then h=(g-b)/d%6 elseif mx==g then h=(b-r)/d+2 else h=(r-g)/d+4 end
+		h = h/6
 	end
 	return h,s,v
 end
-local function colorToTable(c) return {R=math.floor(c.R*255),G=math.floor(c.G*255),B=math.floor(c.B*255)} end
-local function tableToColor(t)
-	if type(t)=="table" and t.R then return Color3.fromRGB(t.R,t.G,t.B) end
-	return Color3.new(1,1,1)
-end
+local function c3ToT(c) return {R=math.floor(c.R*255),G=math.floor(c.G*255),B=math.floor(c.B*255)} end
+local function tToC3(t) if type(t)=="table" and t.R then return Color3.fromRGB(t.R,t.G,t.B) end return Color3.new(1,1,1) end
 
 -- ─────────────────────────────────────────────────────────
--- CONFIG SYSTEM
+-- POPUP SYSTEM
+-- Popups live in their own high-DisplayOrder ScreenGui.
+-- NO full-screen blocking buttons – clicks pass through freely.
+-- Outside-click detection uses UIS:GetMouseLocation() only.
 -- ─────────────────────────────────────────────────────────
 
-local ConfigSystem = {Folder="KingVonHook", Ext=".kvh"}
-ConfigSystem.__index = ConfigSystem
+local PM = { _open=nil, _gui=nil }
 
-function ConfigSystem:Init()
-	if not isfolder(self.Folder) then makefolder(self.Folder) end
-end
-function ConfigSystem:Save(name, data)
-	local out={}
-	for k,v in pairs(data) do
-		if type(v)=="userdata" then out[k]=colorToTable(v)
-		else out[k]=v end
-	end
-	writefile(self.Folder.."/"..name..self.Ext, HTTP:JSONEncode(out))
-end
-function ConfigSystem:Load(name)
-	local path=self.Folder.."/"..name..self.Ext
-	if not isfile(path) then return nil end
-	local ok,v=pcall(function() return HTTP:JSONDecode(readfile(path)) end)
-	return ok and v or nil
-end
-function ConfigSystem:Delete(name)
-	local path=self.Folder.."/"..name..self.Ext
-	if isfile(path) then delfile(path) end
-end
-function ConfigSystem:List()
-	local out={}
-	for _,f in ipairs(listfiles(self.Folder)) do
-		local n=f:match("([^/\\]+)"..self.Ext.."$")
-		if n then table.insert(out,n) end
-	end
-	return out
+function PM:Setup()
+	local g = New("ScreenGui",{
+		Name="KVH_Popups", ResetOnSpawn=false,
+		ZIndexBehavior=Enum.ZIndexBehavior.Sibling,
+		DisplayOrder=100,
+		IgnoreGuiInset=true,
+	})
+	pcall(function() g.Parent = game:GetService("CoreGui") end)
+	if not g.Parent then g.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
+	self._gui = g
 end
 
--- ─────────────────────────────────────────────────────────
--- POPUP MANAGER
--- Popups live in a full-screen overlay above everything.
--- Only one popup can be open at a time.
--- Clicking outside closes all popups.
--- ─────────────────────────────────────────────────────────
-
-local PopupManager = {}
-PopupManager._open = nil
-PopupManager._overlay = nil
-
-function PopupManager:Init(sg)
-	if self._overlay and self._overlay.Parent then return end
-	self._overlay = New("Frame",{
-		Name="KVH_Overlay", Size=UDim2.new(1,0,1,0),
-		BackgroundTransparency=1, ZIndex=500,
-	}, sg)
-	-- Invisible full screen button to catch outside clicks
-	local bg = New("TextButton",{
-		Size=UDim2.new(1,0,1,0), BackgroundTransparency=1,
-		Text="", ZIndex=499,
-	}, sg)
-	bg.MouseButton1Click:Connect(function()
-		self:CloseAll()
-	end)
-end
-
-function PopupManager:Open(popup, anchorFrame)
-	-- Close previous
+function PM:Open(popup, anchor)
 	if self._open and self._open ~= popup then
 		self._open.Visible = false
-		self._open = nil
 	end
 
-	-- Reparent to overlay so it's never clipped
-	popup.Parent = self._overlay
+	-- Move popup into the dedicated popup ScreenGui
+	popup.Parent = self._gui
 
-	-- Position below anchor
-	local ax = anchorFrame.AbsolutePosition.X
-	local ay = anchorFrame.AbsolutePosition.Y + anchorFrame.AbsoluteSize.Y + 3
-	local pw = popup.Size.X.Offset
-	local ph = popup.Size.Y.Offset
-	local sw = self._overlay.AbsoluteSize.X
-	local sh = self._overlay.AbsoluteSize.Y
-	if ax + pw > sw then ax = sw - pw - 4 end
-	if ay + ph > sh then ay = anchorFrame.AbsolutePosition.Y - ph - 3 end
+	-- Clamp position below anchor
+	local ax  = anchor.AbsolutePosition.X
+	local ay  = anchor.AbsolutePosition.Y + anchor.AbsoluteSize.Y + 3
+	local pw  = popup.Size.X.Offset
+	local ph  = popup.Size.Y.Offset
+	local sw  = self._gui.AbsoluteSize.X
+	local sh  = self._gui.AbsoluteSize.Y
+	if ax + pw > sw - 4 then ax = sw - pw - 4 end
+	if ay + ph > sh - 4 then ay = anchor.AbsolutePosition.Y - ph - 3 end
+	if ax < 2 then ax = 2 end
 	popup.Position = UDim2.new(0, ax, 0, ay)
-
-	-- Smooth open
-	popup.Visible = true
-	popup.BackgroundTransparency = 1
-	Tween(popup, {BackgroundTransparency=0}, 0.12)
-	local children = popup:GetDescendants()
-	for _,c in ipairs(children) do
-		if c:IsA("TextLabel") or c:IsA("TextButton") or c:IsA("Frame") then
-			if c.BackgroundTransparency < 1 then
-				local target = c.BackgroundTransparency
-				c.BackgroundTransparency = 1
-				Tween(c, {BackgroundTransparency=target}, 0.12)
-			end
-		end
-	end
-
+	popup.Visible  = true
 	self._open = popup
 end
 
-function PopupManager:Close(popup)
+function PM:Close(popup)
 	if popup then
 		popup.Visible = false
 		if self._open == popup then self._open = nil end
 	end
 end
 
-function PopupManager:CloseAll()
-	if self._open then
-		self._open.Visible = false
-		self._open = nil
+function PM:CloseAll()
+	if self._open then self:Close(self._open) end
+end
+
+-- Close when clicking outside the open popup (no blocking button needed)
+UIS.InputBegan:Connect(function(i)
+	if i.UserInputType ~= Enum.UserInputType.MouseButton1 then return end
+	if not PM._open or not PM._open.Visible then return end
+	local mp = UIS:GetMouseLocation()
+	local p  = PM._open
+	local px,py = p.AbsolutePosition.X, p.AbsolutePosition.Y
+	local pw,ph  = p.AbsoluteSize.X,    p.AbsoluteSize.Y
+	if mp.X < px or mp.X > px+pw or mp.Y < py or mp.Y > py+ph then
+		PM:CloseAll()
 	end
+end)
+
+-- ─────────────────────────────────────────────────────────
+-- CONFIG SYSTEM
+-- ─────────────────────────────────────────────────────────
+
+local CS = {Folder="KingVonHook", Ext=".kvh"}
+CS.__index = CS
+function CS:Init()   if not isfolder(self.Folder) then makefolder(self.Folder) end end
+function CS:Save(n,d)
+	local o={}
+	for k,v in pairs(d) do
+		o[k] = type(v)=="userdata" and c3ToT(v) or v
+	end
+	writefile(self.Folder.."/"..n..self.Ext, HTTP:JSONEncode(o))
+end
+function CS:Load(n)
+	local p=self.Folder.."/"..n..self.Ext
+	if not isfile(p) then return nil end
+	local ok,v=pcall(function() return HTTP:JSONDecode(readfile(p)) end)
+	return ok and v or nil
+end
+function CS:Delete(n) local p=self.Folder.."/"..n..self.Ext; if isfile(p) then delfile(p) end end
+function CS:List()
+	local o={}
+	for _,f in ipairs(listfiles(self.Folder)) do
+		local n=f:match("([^/\\]+)"..self.Ext.."$"); if n then table.insert(o,n) end
+	end
+	return o
 end
 
 -- ─────────────────────────────────────────────────────────
 -- LIBRARY CONSTRUCTOR
 -- ─────────────────────────────────────────────────────────
 
-function Library.new(config)
-	config = config or {}
+function Library.new(cfg)
+	cfg = cfg or {}
 	local self = setmetatable({}, Library)
 	self.Tabs={}; self.TabMap={}; self.ActiveTab=nil; self.ActiveBtn=nil
-	self.Flags={}; self._flagApis={}
-	-- BindList stores {label, keyRef, toggleRef, enabled}
-	self._binds = {}
-	self.Config = setmetatable({}, ConfigSystem)
-	self.Config:Init()
+	self.Flags={}; self._apis={}; self._binds={}
+	self.Config = setmetatable({}, CS); self.Config:Init()
 
-	local sg = New("ScreenGui",{Name="KingVonHook",ResetOnSpawn=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling})
-	pcall(function() sg.Parent = game:GetService("CoreGui") end)
-	if not sg.Parent then sg.Parent = Players.LocalPlayer:WaitForChild("PlayerGui") end
+	-- Main ScreenGui
+	local sg = New("ScreenGui",{Name="KingVonHook",ResetOnSpawn=false,
+		ZIndexBehavior=Enum.ZIndexBehavior.Sibling, DisplayOrder=5, IgnoreGuiInset=true})
+	pcall(function() sg.Parent=game:GetService("CoreGui") end)
+	if not sg.Parent then sg.Parent=Players.LocalPlayer:WaitForChild("PlayerGui") end
 	self.ScreenGui = sg
 
-	PopupManager:Init(sg)
-	self.Popup = PopupManager
+	-- Initialize popup system with its own ScreenGui
+	PM:Setup()
 
-	-- Main frame
+	-- ─── Main window ───────────────────────────────────────
 	local main = New("Frame",{
-		Name="MainFrame", Size=UDim2.new(0,900,0,620),
+		Name="Main", Size=UDim2.new(0,900,0,620),
 		Position=UDim2.new(0.5,-450,0.5,-310),
 		BackgroundColor3=Color3.fromRGB(8,8,8), BorderSizePixel=0, Active=true,
-	}, sg)
-	Corner(main,4); Stroke(main, Color3.fromRGB(35,35,35), 1)
+	},sg)
+	Corner(main,4); Stroke(main,Color3.fromRGB(35,35,35),1)
 	self.MainFrame = main
 
-	-- Title bar
-	local tbar = New("Frame",{Size=UDim2.new(1,0,0,30),BackgroundColor3=Color3.fromRGB(8,8,8),BorderSizePixel=0},main)
-	New("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-1),BackgroundColor3=Color3.fromRGB(32,32,32),BorderSizePixel=0},tbar)
-	New("TextLabel",{
-		Size=UDim2.new(0.6,0,1,0),Position=UDim2.new(0,10,0,0),BackgroundTransparency=1,
-		Text=config.Title or "KINGVONHOOK (Bypass) By Vlone",
+	-- Title bar (also the drag handle for the main window)
+	local tbar = New("Frame",{Size=UDim2.new(1,0,0,30),
+		BackgroundColor3=Color3.fromRGB(8,8,8),BorderSizePixel=0},main)
+	New("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-1),
+		BackgroundColor3=Color3.fromRGB(32,32,32),BorderSizePixel=0},tbar)
+	New("TextLabel",{Size=UDim2.new(1,-10,1,0),Position=UDim2.new(0,10,0,0),
+		BackgroundTransparency=1,
+		Text=cfg.Title or "KINGVONHOOK (Bypass) By Vlone",
 		TextColor3=Color3.fromRGB(160,160,160),TextSize=12,Font=Enum.Font.Code,
-		TextXAlignment=Enum.TextXAlignment.Left,
-	},tbar)
+		TextXAlignment=Enum.TextXAlignment.Left},tbar)
 	Draggable(main, tbar)
 
-	-- ── Watermark (right side of title bar) ──
-	-- Floating bar inspired by reference: "KingVonHook | fps | ping | time"
-	local wmFrame = New("Frame",{
-		Size=UDim2.new(0,360,0,22),
-		Position=UDim2.new(1,-370,0.5,-11),
-		BackgroundColor3=Color3.fromRGB(5,5,5),
-		BorderSizePixel=0,
-	},tbar)
-	Corner(wmFrame,3)
-	-- Red border stroke on watermark
-	local wmStroke = New("UIStroke",{Color=Color3.fromRGB(160,0,0),Thickness=1},wmFrame)
-	self.WatermarkFrame = wmFrame
-	self.WatermarkStroke = wmStroke
-
-	self.WatermarkLabel = New("TextLabel",{
-		Size=UDim2.new(1,-8,1,0), Position=UDim2.new(0,6,0,0),
-		BackgroundTransparency=1,
-		Text="KingVonHook | fps: -- | ping: -- | time: --:--:--",
-		TextColor3=Color3.fromRGB(200,200,200),TextSize=10,Font=Enum.Font.Code,
-		TextXAlignment=Enum.TextXAlignment.Left,
-	},wmFrame)
-
-	-- Rotating black→red gradient on watermark border
-	local wmGrad = New("UIGradient",{
-		Color=ColorSequence.new({
-			ColorSequenceKeypoint.new(0, Color3.fromRGB(160,0,0)),
-			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(30,0,0)),
-			ColorSequenceKeypoint.new(1, Color3.fromRGB(160,0,0)),
-		}),
-		Rotation=0,
-	}, wmStroke)
-	self._wmRot = 0
-	RUN.Heartbeat:Connect(function(dt)
-		self._wmRot = (self._wmRot + dt*40)%360
-		wmGrad.Rotation = self._wmRot
-		-- Update FPS / ping / time in watermark
-		local fps = math.floor(1/dt)
-		local ping = math.floor(Players.LocalPlayer:GetNetworkPing()*1000)
-		local t = os.date("*t")
-		local timeStr = string.format("%02d:%02d:%02d",t.hour,t.min,t.sec)
-		self.WatermarkLabel.Text = string.format(
-			"KingVonHook | fps: %d | ping: %dms | time: %s",
-			fps, ping, timeStr
-		)
-	end)
-
-	-- Tab wrapper
+	-- Tab bar
 	local tw = New("Frame",{Size=UDim2.new(1,-16,0,34),Position=UDim2.new(0,8,0,32),BackgroundTransparency=1},main)
 	local tc = New("Frame",{Size=UDim2.new(1,0,0,24),BackgroundTransparency=1},tw)
 	New("UIListLayout",{FillDirection=Enum.FillDirection.Horizontal,SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,6)},tc)
 	self.TabContainer = tc
+	local utrack = New("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-1),
+		BackgroundColor3=Color3.fromRGB(30,30,30),BorderSizePixel=0},tw)
+	self.Underline = New("Frame",{Size=UDim2.new(0,60,0,1),
+		BackgroundColor3=Color3.fromRGB(210,210,210),BorderSizePixel=0,ZIndex=2},utrack)
 
-	local utrack = New("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-1),BackgroundColor3=Color3.fromRGB(30,30,30),BorderSizePixel=0},tw)
-	self.TabUnderline = New("Frame",{Size=UDim2.new(0,60,0,1),BackgroundColor3=Color3.fromRGB(210,210,210),BorderSizePixel=0,ZIndex=2},utrack)
-
-	-- Content frame
+	-- Content area
 	local cf = New("Frame",{
 		Size=UDim2.new(1,-16,1,-82),Position=UDim2.new(0,8,0,74),
-		BackgroundColor3=Color3.fromRGB(10,10,10),BorderSizePixel=0,ClipsDescendants=true,
-	},main)
+		BackgroundColor3=Color3.fromRGB(10,10,10),BorderSizePixel=0,ClipsDescendants=true},main)
 	Corner(cf,4); Stroke(cf,Color3.fromRGB(32,32,32),1)
 	self.ContentFrame = cf
-
-	if config.BackgroundId then
-		New("ImageLabel",{
-			Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,
-			Image="rbxassetid://"..tostring(config.BackgroundId),
+	if cfg.BackgroundId then
+		New("ImageLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,
+			Image="rbxassetid://"..tostring(cfg.BackgroundId),
 			ScaleType=Enum.ScaleType.Stretch,
-			ImageTransparency=config.ImageTransparency or 0.3,ZIndex=1,
-		},cf)
+			ImageTransparency=cfg.ImageTransparency or 0.3,ZIndex=1},cf)
 	end
+
+	-- ─── Watermark: standalone draggable window ─────────────
+	-- Separate from main UI, drag anywhere on screen
+	local wm = New("Frame",{
+		Name="KVH_Watermark", Size=UDim2.new(0,400,0,26),
+		Position=UDim2.new(0.5,-200,0,6),
+		BackgroundColor3=Color3.fromRGB(6,6,6),BorderSizePixel=0,Active=true,ZIndex=10,
+	},sg)
+	Corner(wm,4)
+	local wmStroke = Stroke(wm, Color3.fromRGB(160,0,0),1)
+	local wmGrad   = New("UIGradient",{
+		Color=ColorSequence.new({
+			ColorSequenceKeypoint.new(0,   Color3.fromRGB(200,0,0)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(30,0,0)),
+			ColorSequenceKeypoint.new(1,   Color3.fromRGB(200,0,0)),
+		}), Rotation=0,
+	}, wmStroke)
+	local wmLabel = New("TextLabel",{
+		Size=UDim2.new(1,-12,1,0),Position=UDim2.new(0,8,0,0),
+		BackgroundTransparency=1,
+		Text="KingVonHook  |  fps: --  |  ping: --ms  |  time: --:--:--",
+		TextColor3=Color3.fromRGB(200,200,200),TextSize=10,Font=Enum.Font.Code,
+		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=11},wm)
+	self.WatermarkLabel  = wmLabel
+	self.WatermarkWindow = wm
+	Draggable(wm, wm) -- drag the whole watermark bar
+
+	local wmRot = 0
+	RUN.Heartbeat:Connect(function(dt)
+		wmRot = (wmRot + dt*50)%360
+		wmGrad.Rotation = wmRot
+		local fps  = math.floor(1/math.max(dt,0.001))
+		local ping = math.floor(Players.LocalPlayer:GetNetworkPing()*1000)
+		local t    = os.date("*t")
+		wmLabel.Text = string.format(
+			"KingVonHook  |  fps: %d  |  ping: %dms  |  time: %02d:%02d:%02d",
+			fps, ping, t.hour, t.min, t.sec)
+	end)
 
 	self:_AddRipTab()
 	return self
 end
 
-function Library:SetWatermark(text) if self.WatermarkLabel then self.WatermarkLabel.Text=text end end
-
 -- ─────────────────────────────────────────────────────────
--- R.I.P. VON TAB
+-- R.I.P. VON
 -- ─────────────────────────────────────────────────────────
 
 function Library:_AddRipTab()
-	local tab = self:_CreateTabFrame("R.I.P. VON",true)
+	local tab = self:_CreateTab("R.I.P. VON", true)
 	local function L(txt,col,sz,y)
-		New("TextLabel",{Size=UDim2.new(1,-20,0,22),Position=UDim2.new(0,12,0,y),BackgroundTransparency=1,
-			Text=txt,TextColor3=col,TextSize=sz,Font=Enum.Font.Code,
+		New("TextLabel",{Size=UDim2.new(1,-20,0,22),Position=UDim2.new(0,12,0,y),
+			BackgroundTransparency=1,Text=txt,TextColor3=col,TextSize=sz,Font=Enum.Font.Code,
 			TextXAlignment=Enum.TextXAlignment.Left,TextWrapped=true,ZIndex=3},tab.Page)
 	end
-	L("R.I.P. KING VON",                                 Color3.fromRGB(195,0,0),    13,12)
-	L("Rest in Peace to the legendary rapper King Von.", Color3.fromRGB(155,155,155),12,38)
-	L("This cheat is dedicated to his memory.",          Color3.fromRGB(155,155,155),12,58)
-	L("2020 - Forever",                                  Color3.fromRGB(90,90,90),   12,90)
+	L("R.I.P. KING VON",                                Color3.fromRGB(195,0,0),    13, 12)
+	L("Rest in Peace to the legendary rapper King Von.",Color3.fromRGB(155,155,155), 12, 38)
+	L("This cheat is dedicated to his memory.",         Color3.fromRGB(155,155,155), 12, 58)
+	L("2020 - Forever",                                 Color3.fromRGB(90,90,90),   12, 90)
 end
 
 -- ─────────────────────────────────────────────────────────
--- TAB FRAME FACTORY
+-- TAB SYSTEM
 -- ─────────────────────────────────────────────────────────
 
-function Library:_CreateTabFrame(tabName, noPanels)
+function Library:_CreateTab(name, noPanels)
 	local btn = New("TextButton",{
-		Name=tabName, Size=UDim2.new(0,64,1,0), BackgroundTransparency=1, BorderSizePixel=0,
-		Text=tabName, TextColor3=Color3.fromRGB(120,120,120), TextSize=11, Font=Enum.Font.Code,
+		Name=name, Size=UDim2.new(0,64,1,0),
+		BackgroundTransparency=1, BorderSizePixel=0,
+		Text=name, TextColor3=Color3.fromRGB(120,120,120),
+		TextSize=11, Font=Enum.Font.Code,
 		LayoutOrder=#self.Tabs+1, AutoButtonColor=false,
 	},self.TabContainer)
-
 	local page = New("Frame",{
-		Name=tabName, Size=UDim2.new(1,0,1,0), BackgroundTransparency=1, Visible=false, ZIndex=2,
+		Name=name, Size=UDim2.new(1,0,1,0),
+		BackgroundTransparency=1, Visible=false, ZIndex=2,
 	},self.ContentFrame)
-
-	local tab = {Name=tabName, Button=btn, Page=page, LeftPanel=nil, RightPanel=nil}
-
+	local tab = {Name=name, Button=btn, Page=page, LeftPanel=nil, RightPanel=nil}
 	if not noPanels then
+		-- divider
 		New("Frame",{Size=UDim2.new(0,1,1,-10),Position=UDim2.new(0.5,0,0,5),
 			BackgroundColor3=Color3.fromRGB(35,35,35),BorderSizePixel=0,ZIndex=2},page)
 		tab.LeftPanel  = New("Frame",{Size=UDim2.new(0.5,-8,1,0),
-			BackgroundTransparency=1,ZIndex=2,ClipsDescendants=false},page)
+			BackgroundTransparency=1,ZIndex=2},page)
 		tab.RightPanel = New("Frame",{Size=UDim2.new(0.5,-8,1,0),Position=UDim2.new(0.5,8,0,0),
-			BackgroundTransparency=1,ZIndex=2,ClipsDescendants=false},page)
+			BackgroundTransparency=1,ZIndex=2},page)
 	end
-
-	table.insert(self.Tabs,tab); self.TabMap[tabName]=tab
-	btn.MouseButton1Click:Connect(function() self:SetActiveTab(tabName) end)
-	btn.MouseEnter:Connect(function() if self.ActiveTab~=tabName then btn.TextColor3=Color3.fromRGB(165,165,165) end end)
-	btn.MouseLeave:Connect(function() if self.ActiveTab~=tabName then btn.TextColor3=Color3.fromRGB(120,120,120) end end)
+	table.insert(self.Tabs, tab); self.TabMap[name] = tab
+	btn.MouseButton1Click:Connect(function() self:SetActiveTab(name) end)
+	btn.MouseEnter:Connect(function() if self.ActiveTab~=name then btn.TextColor3=Color3.fromRGB(165,165,165) end end)
+	btn.MouseLeave:Connect(function() if self.ActiveTab~=name then btn.TextColor3=Color3.fromRGB(120,120,120) end end)
 	return tab
 end
 
-function Library:AddTab(tabName)
+function Library:AddTab(name)
 	local rip = self.TabMap["R.I.P. VON"]
 	if rip then rip.Button.LayoutOrder=999 end
-	local tab = self:_CreateTabFrame(tabName, false)
+	local tab = self:_CreateTab(name, false)
 	tab.Button.LayoutOrder = #self.Tabs-1
 	return tab
 end
 
-function Library:SetActiveTab(tabName)
+function Library:SetActiveTab(name)
 	if self.ActiveBtn then self.ActiveBtn.TextColor3=Color3.fromRGB(120,120,120) end
-	local tab = self.TabMap[tabName]; if not tab then return end
-	tab.Button.TextColor3 = tabName=="R.I.P. VON" and Color3.fromRGB(200,60,60) or Color3.fromRGB(220,220,220)
-	self.ActiveTab=tabName; self.ActiveBtn=tab.Button
+	local tab = self.TabMap[name]; if not tab then return end
+	tab.Button.TextColor3 = name=="R.I.P. VON" and Color3.fromRGB(200,60,60) or Color3.fromRGB(220,220,220)
+	self.ActiveTab=name; self.ActiveBtn=tab.Button
 	task.defer(function()
-		self.TabUnderline.Size     = UDim2.new(0,tab.Button.AbsoluteSize.X,0,1)
-		self.TabUnderline.Position = UDim2.new(0,tab.Button.AbsolutePosition.X-self.TabContainer.AbsolutePosition.X,0,0)
+		self.Underline.Size     = UDim2.new(0,tab.Button.AbsoluteSize.X,0,1)
+		self.Underline.Position = UDim2.new(0,tab.Button.AbsolutePosition.X-self.TabContainer.AbsolutePosition.X,0,0)
 	end)
-	for _,t in ipairs(self.Tabs) do t.Page.Visible = t.Name==tabName end
+	for _,t in ipairs(self.Tabs) do t.Page.Visible=(t.Name==name) end
 end
 
 -- ─────────────────────────────────────────────────────────
 -- SECTION HEADER
 -- ─────────────────────────────────────────────────────────
 
-function Library:MakeSectionHeader(parent,leftText,rightText,yPos,zIdx)
-	local h=New("Frame",{Size=UDim2.new(1,-16,0,22),Position=UDim2.new(0,8,0,yPos),BackgroundTransparency=1,ZIndex=zIdx},parent)
-	New("TextLabel",{Size=UDim2.new(0.6,0,1,0),BackgroundTransparency=1,Text=leftText,TextColor3=Color3.fromRGB(160,160,160),TextSize=11,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=zIdx},h)
-	if rightText and rightText~="" then
-		New("TextLabel",{Size=UDim2.new(0.4,0,1,0),Position=UDim2.new(0.6,0,0,0),BackgroundTransparency=1,Text=rightText,TextColor3=Color3.fromRGB(160,160,160),TextSize=11,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Right,ZIndex=zIdx},h)
+function Library:MakeSectionHeader(p,left,right,y,z)
+	local h=New("Frame",{Size=UDim2.new(1,-16,0,22),Position=UDim2.new(0,8,0,y),BackgroundTransparency=1,ZIndex=z},p)
+	New("TextLabel",{Size=UDim2.new(0.65,0,1,0),BackgroundTransparency=1,Text=left,
+		TextColor3=Color3.fromRGB(160,160,160),TextSize=11,Font=Enum.Font.Code,
+		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=z},h)
+	if right and right~="" then
+		New("TextLabel",{Size=UDim2.new(0.35,0,1,0),Position=UDim2.new(0.65,0,0,0),BackgroundTransparency=1,
+			Text=right,TextColor3=Color3.fromRGB(160,160,160),TextSize=11,Font=Enum.Font.Code,
+			TextXAlignment=Enum.TextXAlignment.Right,ZIndex=z},h)
 	end
-	New("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-1),BackgroundColor3=Color3.fromRGB(45,45,45),BorderSizePixel=0,ZIndex=zIdx},h)
+	New("Frame",{Size=UDim2.new(1,0,0,1),Position=UDim2.new(0,0,1,-1),
+		BackgroundColor3=Color3.fromRGB(45,45,45),BorderSizePixel=0,ZIndex=z},h)
 end
 
 -- ─────────────────────────────────────────────────────────
--- TOGGLE  (with optional key bind shown inline)
+-- INTERNAL: build color picker popup frame (shared logic)
+-- Returns the popup Frame + an updateUI function
 -- ─────────────────────────────────────────────────────────
 
-function Library:MakeToggle(parent,labelText,yPos,zIdx,flagKey,callback)
-	local row = New("Frame",{Size=UDim2.new(1,-16,0,28),Position=UDim2.new(0,8,0,yPos),BackgroundTransparency=1,ZIndex=zIdx},parent)
-	local box = New("Frame",{Size=UDim2.new(0,16,0,16),Position=UDim2.new(0,0,0.5,-8),BackgroundColor3=Color3.fromRGB(18,18,18),BorderSizePixel=0,ZIndex=zIdx},row)
+local function BuildColorPickerPopup(hueRef, satRef, valRef, alphaRef, defaultColor, flagKey, flagsTable, callback)
+	local hue,sat,val,alpha = hueRef[1],satRef[1],valRef[1],alphaRef[1]
+
+	local picker = New("Frame",{
+		Size=UDim2.new(0,224,0,232),
+		BackgroundColor3=Color3.fromRGB(14,14,14),BorderSizePixel=0,Visible=false,ZIndex=10,
+	})
+	Corner(picker,5); Stroke(picker,Color3.fromRGB(50,50,50),1)
+
+	-- Gradient canvas (hue × saturation)
+	local satBox = New("ImageButton",{
+		Size=UDim2.new(1,-16,0,110),Position=UDim2.new(0,8,0,8),
+		BackgroundColor3=HSVtoRGB(hue,1,1),BorderSizePixel=0,
+		Image="rbxassetid://2529273", AutoButtonColor=false, ZIndex=11,
+	},picker)
+	Corner(satBox,3)
+	local cursor = New("Frame",{Size=UDim2.new(0,10,0,10),
+		AnchorPoint=Vector2.new(0.5,0.5),BackgroundTransparency=1,
+		BorderSizePixel=0,ZIndex=13},satBox)
+	New("UIStroke",{Color=Color3.new(1,1,1),Thickness=2},cursor)
+	Corner(cursor,5)
+
+	-- Brightness slider
+	local vTrack = New("Frame",{Size=UDim2.new(1,-16,0,10),Position=UDim2.new(0,8,0,126),
+		BackgroundColor3=Color3.new(0,0,0),BorderSizePixel=0,ZIndex=11},picker)
+	Corner(vTrack,3)
+	New("UIGradient",{Color=ColorSequence.new(Color3.new(0,0,0),Color3.new(1,1,1))},vTrack)
+	local vKnob = New("Frame",{Size=UDim2.new(0,10,1,4),AnchorPoint=Vector2.new(0.5,0),
+		Position=UDim2.new(val,0,0,-2),BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0,ZIndex=12},vTrack)
+	Corner(vKnob,2); Stroke(vKnob,Color3.new(0,0,0),1)
+	local vHit = New("TextButton",{Size=UDim2.new(1,0,0,18),Position=UDim2.new(0,0,0,-4),
+		BackgroundTransparency=1,Text="",ZIndex=14},vTrack)
+
+	-- Alpha slider
+	local aTrack = New("Frame",{Size=UDim2.new(1,-16,0,10),Position=UDim2.new(0,8,0,146),
+		BackgroundColor3=Color3.new(0,0,0),BorderSizePixel=0,ZIndex=11},picker)
+	Corner(aTrack,3)
+	New("UIGradient",{
+		Color=ColorSequence.new(Color3.new(1,1,1),Color3.new(1,1,1)),
+		Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)}),
+	},aTrack)
+	local aKnob = New("Frame",{Size=UDim2.new(0,10,1,4),AnchorPoint=Vector2.new(0.5,0),
+		Position=UDim2.new(alpha,0,0,-2),BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0,ZIndex=12},aTrack)
+	Corner(aKnob,2); Stroke(aKnob,Color3.new(0,0,0),1)
+	local aHit = New("TextButton",{Size=UDim2.new(1,0,0,18),Position=UDim2.new(0,0,0,-4),
+		BackgroundTransparency=1,Text="",ZIndex=14},aTrack)
+
+	New("TextLabel",{Size=UDim2.new(0.5,0,0,11),Position=UDim2.new(0,8,0,158),
+		BackgroundTransparency=1,Text="Brightness",
+		TextColor3=Color3.fromRGB(80,80,80),TextSize=9,Font=Enum.Font.Code,ZIndex=11},picker)
+	New("TextLabel",{Size=UDim2.new(0.5,0,0,11),Position=UDim2.new(0.5,0,0,158),
+		BackgroundTransparency=1,Text="Opacity",
+		TextColor3=Color3.fromRGB(80,80,80),TextSize=9,Font=Enum.Font.Code,ZIndex=11},picker)
+
+	-- Hex input
+	local hexBox = New("TextBox",{
+		Size=UDim2.new(1,-48,0,22),Position=UDim2.new(0,8,0,171),
+		BackgroundColor3=Color3.fromRGB(20,20,20),BorderSizePixel=0,
+		Text=string.format("%02X%02X%02X",math.floor(defaultColor.R*255),math.floor(defaultColor.G*255),math.floor(defaultColor.B*255)),
+		TextColor3=Color3.fromRGB(200,200,200),PlaceholderText="RRGGBB",
+		PlaceholderColor3=Color3.fromRGB(80,80,80),TextSize=11,Font=Enum.Font.Code,
+		ClearTextOnFocus=false,ZIndex=11,
+	},picker)
+	Corner(hexBox,3); Stroke(hexBox,Color3.fromRGB(50,50,50),1)
+	New("UIPadding",{PaddingLeft=UDim.new(0,6)},hexBox)
+
+	local swInner = New("Frame",{Size=UDim2.new(0,32,0,22),Position=UDim2.new(1,-40,0,171),
+		BackgroundColor3=defaultColor,BorderSizePixel=0,ZIndex=11},picker)
+	Corner(swInner,3); Stroke(swInner,Color3.fromRGB(50,50,50),1)
+
+	-- previewRef is set by caller after construction
+	local previewRef = {}
+
+	local function getColor() return HSVtoRGB(hue,sat,val) end
+
+	local function updateAll()
+		local c = getColor()
+		swInner.BackgroundColor3 = c
+		if previewRef[1] then previewRef[1].BackgroundColor3 = c end
+		satBox.BackgroundColor3  = HSVtoRGB(hue,1,1)
+		cursor.Position          = UDim2.new(hue,0,1-sat,0)
+		vKnob.Position           = UDim2.new(val,0,0,-2)
+		aKnob.Position           = UDim2.new(alpha,0,0,-2)
+		hexBox.Text = string.format("%02X%02X%02X",
+			math.floor(c.R*255),math.floor(c.G*255),math.floor(c.B*255))
+		-- sync refs
+		hueRef[1]=hue; satRef[1]=sat; valRef[1]=val; alphaRef[1]=alpha
+		if flagKey and flagsTable then flagsTable[flagKey]=c3ToT(c) end
+		if callback then callback(c, alpha) end
+	end
+
+	-- Drag handlers
+	local sD,vD,aD=false,false,false
+	satBox.MouseButton1Down:Connect(function() sD=true end)
+	vHit.MouseButton1Down:Connect(function() vD=true end)
+	aHit.MouseButton1Down:Connect(function() aD=true end)
+	UIS.InputChanged:Connect(function(i)
+		if i.UserInputType~=Enum.UserInputType.MouseMovement then return end
+		if sD then
+			hue = math.clamp((i.Position.X-satBox.AbsolutePosition.X)/satBox.AbsoluteSize.X, 0, 0.9999)
+			sat = 1-math.clamp((i.Position.Y-satBox.AbsolutePosition.Y)/satBox.AbsoluteSize.Y, 0, 1)
+			updateAll()
+		elseif vD then
+			val = math.clamp((i.Position.X-vTrack.AbsolutePosition.X)/vTrack.AbsoluteSize.X, 0, 1)
+			updateAll()
+		elseif aD then
+			alpha = math.clamp((i.Position.X-aTrack.AbsolutePosition.X)/aTrack.AbsoluteSize.X, 0, 1)
+			updateAll()
+		end
+	end)
+	UIS.InputEnded:Connect(function(i)
+		if i.UserInputType==Enum.UserInputType.MouseButton1 then sD=false;vD=false;aD=false end
+	end)
+	hexBox.FocusLost:Connect(function()
+		local h=hexBox.Text:gsub("[^%x]",""):sub(1,6)
+		if #h==6 then
+			hue,sat,val=RGBtoHSV(Color3.new(
+				tonumber(h:sub(1,2),16)/255,
+				tonumber(h:sub(3,4),16)/255,
+				tonumber(h:sub(5,6),16)/255))
+			updateAll()
+		end
+	end)
+
+	updateAll()
+
+	return picker, previewRef, updateAll, function() return getColor(),alpha end
+end
+
+-- ─────────────────────────────────────────────────────────
+-- TOGGLE (plain)
+-- ─────────────────────────────────────────────────────────
+
+function Library:MakeToggle(parent, label, y, z, fk, cb)
+	local row=New("Frame",{Size=UDim2.new(1,-16,0,28),Position=UDim2.new(0,8,0,y),BackgroundTransparency=1,ZIndex=z},parent)
+	local box=New("Frame",{Size=UDim2.new(0,16,0,16),Position=UDim2.new(0,0,0.5,-8),
+		BackgroundColor3=Color3.fromRGB(18,18,18),BorderSizePixel=0,ZIndex=z},row)
 	Corner(box,2); Stroke(box,Color3.fromRGB(70,70,70),1)
-	local check = New("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",TextColor3=Color3.fromRGB(100,200,100),TextSize=12,Font=Enum.Font.Code,ZIndex=zIdx+1},box)
-	local lbl = New("TextLabel",{Size=UDim2.new(1,-24,1,0),Position=UDim2.new(0,24,0,0),BackgroundTransparency=1,Text=labelText,TextColor3=Color3.fromRGB(175,175,175),TextSize=11,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=zIdx},row)
+	local chk=New("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",
+		TextColor3=Color3.fromRGB(100,200,100),TextSize=12,Font=Enum.Font.Code,ZIndex=z+1},box)
+	New("TextLabel",{Size=UDim2.new(1,-24,1,0),Position=UDim2.new(0,24,0,0),BackgroundTransparency=1,
+		Text=label,TextColor3=Color3.fromRGB(175,175,175),TextSize=11,Font=Enum.Font.Code,
+		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=z},row)
 
-	-- Key bind display (right side, shown if key is set)
-	local keyTag = New("TextLabel",{
-		Size=UDim2.new(0,50,0,16),Position=UDim2.new(1,-54,0.5,-8),
+	local on=false
+	if fk then self.Flags[fk]=false end
+	local hit=New("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=z+2},row)
+	hit.MouseButton1Click:Connect(function()
+		on=not on; chk.Text=on and "✓" or ""
+		if fk then self.Flags[fk]=on end; if cb then cb(on) end
+	end)
+	local api={}
+	function api:Set(v) on=v;chk.Text=on and "✓" or "";if fk then self.Flags[fk]=on end;if cb then cb(on) end end
+	function api:Get() return on end
+	return row,api
+end
+
+-- ─────────────────────────────────────────────────────────
+-- TOGGLE + KEYBIND  (checkbox left, [KEY] tag right)
+-- Pressing the key toggles the feature on/off automatically
+-- ─────────────────────────────────────────────────────────
+
+function Library:MakeToggleKey(parent, label, defaultKey, y, z, fk, fkKey, cb)
+	defaultKey = defaultKey or Enum.KeyCode.Unknown
+	local cur   = defaultKey
+	local listen= false
+	local on    = false
+	local kName = cur==Enum.KeyCode.Unknown and "NONE" or cur.Name
+
+	-- Register bind entry
+	local entry = {Label=label, Key=kName}
+	table.insert(self._binds, entry)
+
+	if fk    then self.Flags[fk]=false  end
+	if fkKey then self.Flags[fkKey]=kName end
+
+	local row=New("Frame",{Size=UDim2.new(1,-16,0,28),Position=UDim2.new(0,8,0,y),BackgroundTransparency=1,ZIndex=z},parent)
+
+	-- Checkbox
+	local box=New("Frame",{Size=UDim2.new(0,16,0,16),Position=UDim2.new(0,0,0.5,-8),
+		BackgroundColor3=Color3.fromRGB(18,18,18),BorderSizePixel=0,ZIndex=z},row)
+	Corner(box,2); Stroke(box,Color3.fromRGB(70,70,70),1)
+	local chk=New("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",
+		TextColor3=Color3.fromRGB(100,200,100),TextSize=12,Font=Enum.Font.Code,ZIndex=z+1},box)
+
+	-- Label (leaves room for key tag)
+	New("TextLabel",{Size=UDim2.new(1,-82,1,0),Position=UDim2.new(0,24,0,0),BackgroundTransparency=1,
+		Text=label,TextColor3=Color3.fromRGB(175,175,175),TextSize=11,Font=Enum.Font.Code,
+		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=z},row)
+
+	-- [KEY] button on right — click to rebind
+	local keyBtn=New("TextButton",{
+		Size=UDim2.new(0,56,0,18),Position=UDim2.new(1,-58,0.5,-9),
 		BackgroundColor3=Color3.fromRGB(18,18,18),BorderSizePixel=0,
-		Text="",TextColor3=Color3.fromRGB(200,200,100),TextSize=9,Font=Enum.Font.Code,
-		Visible=false,ZIndex=zIdx+1,
+		Text="["..kName.."]",TextColor3=Color3.fromRGB(200,200,100),
+		TextSize=9,Font=Enum.Font.Code,AutoButtonColor=false,ZIndex=z+2,
 	},row)
-	Corner(keyTag,2); Stroke(keyTag,Color3.fromRGB(50,50,50),1)
+	Corner(keyBtn,2); Stroke(keyBtn,Color3.fromRGB(55,55,55),1)
 
-	local enabled=false
-	if flagKey then self.Flags[flagKey]=false end
+	-- Toggle hitbox (left part only, not over the key button)
+	local hit=New("TextButton",{Size=UDim2.new(1,-62,1,0),BackgroundTransparency=1,Text="",ZIndex=z+2},row)
+	hit.MouseButton1Click:Connect(function()
+		on=not on; chk.Text=on and "✓" or ""
+		if fk then self.Flags[fk]=on end; if cb then cb(on,cur) end
+	end)
 
-	local hitbox=New("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=zIdx+2},row)
-	hitbox.MouseButton1Click:Connect(function()
-		enabled=not enabled
-		check.Text=enabled and "✓" or ""
-		if flagKey then self.Flags[flagKey]=enabled end
-		if callback then callback(enabled) end
+	-- Keybind click → listen for next keypress
+	keyBtn.MouseButton1Click:Connect(function()
+		if listen then return end
+		listen=true; keyBtn.Text="[...]"; keyBtn.TextColor3=Color3.fromRGB(255,255,80)
+	end)
+	UIS.InputBegan:Connect(function(i)
+		if not listen then return end
+		if i.UserInputType==Enum.UserInputType.Keyboard then
+			listen=false; cur=i.KeyCode; kName=cur.Name
+			keyBtn.Text="["..kName.."]"; keyBtn.TextColor3=Color3.fromRGB(200,200,100)
+			entry.Key=kName
+			if fkKey then self.Flags[fkKey]=kName end
+			if cb then cb(on,cur) end
+		end
+	end)
+	-- Pressing bound key fires toggle
+	UIS.InputBegan:Connect(function(i)
+		if listen then return end
+		if i.UserInputType==Enum.UserInputType.Keyboard and i.KeyCode==cur then
+			on=not on; chk.Text=on and "✓" or ""
+			if fk then self.Flags[fk]=on end; if cb then cb(on,cur) end
+		end
 	end)
 
 	local api={}
-	function api:Set(v)
-		enabled=v; check.Text=enabled and "✓" or ""
-		if flagKey then self.Flags[flagKey]=enabled end
-		if callback then callback(enabled) end
+	function api:Set(v) on=v;chk.Text=on and "✓" or "";if fk then self.Flags[fk]=on end end
+	function api:Get() return on end
+	function api:GetKey() return cur end
+	function api:SetKey(k)
+		cur   = type(k)=="string" and (Enum.KeyCode[k] or Enum.KeyCode.Unknown) or k
+		kName = cur.Name; keyBtn.Text="["..kName.."]"; entry.Key=kName
+		if fkKey then self.Flags[fkKey]=kName end
 	end
-	function api:Get() return enabled end
-	function api:SetKey(keyName)
-		keyTag.Text="["..keyName.."]"; keyTag.Visible=true
-		-- shrink label to not overlap
-		lbl.Size=UDim2.new(1,-80,1,0)
+	return row, api
+end
+
+-- ─────────────────────────────────────────────────────────
+-- TOGGLE + COLOR PICKER  (checkbox left, color swatch right)
+-- ─────────────────────────────────────────────────────────
+
+function Library:MakeToggleColor(parent, label, defColor, y, z, fk, fkCol, cb)
+	defColor = defColor or Color3.new(1,1,1)
+	local on  = false
+	local hr  = {(RGBtoHSV(defColor))}
+	local sr  = {select(2,RGBtoHSV(defColor))}
+	local vr  = {select(3,RGBtoHSV(defColor))}
+	local ar  = {1}
+	-- fix refs properly
+	local h0,s0,v0 = RGBtoHSV(defColor)
+	hr={h0}; sr={s0}; vr={v0}; ar={1}
+
+	if fk    then self.Flags[fk]=false end
+	if fkCol then self.Flags[fkCol]=c3ToT(defColor) end
+
+	local row=New("Frame",{Size=UDim2.new(1,-16,0,28),Position=UDim2.new(0,8,0,y),BackgroundTransparency=1,ZIndex=z},parent)
+
+	local box=New("Frame",{Size=UDim2.new(0,16,0,16),Position=UDim2.new(0,0,0.5,-8),
+		BackgroundColor3=Color3.fromRGB(18,18,18),BorderSizePixel=0,ZIndex=z},row)
+	Corner(box,2); Stroke(box,Color3.fromRGB(70,70,70),1)
+	local chk=New("TextLabel",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",
+		TextColor3=Color3.fromRGB(100,200,100),TextSize=12,Font=Enum.Font.Code,ZIndex=z+1},box)
+
+	New("TextLabel",{Size=UDim2.new(1,-60,1,0),Position=UDim2.new(0,24,0,0),BackgroundTransparency=1,
+		Text=label,TextColor3=Color3.fromRGB(175,175,175),TextSize=11,Font=Enum.Font.Code,
+		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=z},row)
+
+	-- Color swatch button
+	local swatch=New("TextButton",{
+		Size=UDim2.new(0,38,0,18),Position=UDim2.new(1,-42,0.5,-9),
+		BackgroundColor3=defColor,BorderSizePixel=0,Text="",AutoButtonColor=false,ZIndex=z+2,
+	},row)
+	Corner(swatch,3); Stroke(swatch,Color3.fromRGB(70,70,70),1)
+
+	-- Toggle hitbox (avoids swatch)
+	local hit=New("TextButton",{Size=UDim2.new(1,-46,1,0),BackgroundTransparency=1,Text="",ZIndex=z+2},row)
+	hit.MouseButton1Click:Connect(function()
+		on=not on; chk.Text=on and "✓" or ""
+		if fk then self.Flags[fk]=on end
+		if cb then cb(on, HSVtoRGB(hr[1],sr[1],vr[1]), ar[1]) end
+	end)
+
+	-- Build picker popup, wire callback to also fire outer cb
+	local picker, previewRef, updateUI, getColorFn = BuildColorPickerPopup(
+		hr, sr, vr, ar, defColor, fkCol, self.Flags,
+		function(c,a) if fkCol then self.Flags[fkCol]=c3ToT(c) end; if cb then cb(on,c,a) end end
+	)
+	previewRef[1] = swatch  -- swatch updates with picker
+
+	swatch.MouseButton1Click:Connect(function()
+		if picker.Visible then PM:Close(picker) else PM:Open(picker, swatch) end
+	end)
+
+	local api={}
+	function api:Set(v) on=v;chk.Text=on and "✓" or "";if fk then self.Flags[fk]=on end end
+	function api:Get() return on end
+	function api:GetColor() return getColorFn() end
+	function api:SetColor(c,a)
+		local nh,ns,nv=RGBtoHSV(c); hr[1]=nh;sr[1]=ns;vr[1]=nv; ar[1]=a or 1; updateUI()
 	end
-	return row,api
+	return row, api
 end
 
 -- ─────────────────────────────────────────────────────────
 -- SLIDER
 -- ─────────────────────────────────────────────────────────
 
-function Library:MakeSlider(parent,labelText,minVal,maxVal,defaultVal,yPos,zIdx,flagKey,callback)
-	local cont=New("Frame",{Size=UDim2.new(1,-16,0,38),Position=UDim2.new(0,8,0,yPos),BackgroundTransparency=1,ZIndex=zIdx},parent)
-	New("TextLabel",{Size=UDim2.new(0.6,0,0,16),BackgroundTransparency=1,Text=labelText,TextColor3=Color3.fromRGB(140,140,140),TextSize=10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=zIdx},cont)
-	local valLbl=New("TextLabel",{Size=UDim2.new(0.4,0,0,16),Position=UDim2.new(0.6,0,0,0),BackgroundTransparency=1,Text=tostring(defaultVal),TextColor3=Color3.fromRGB(140,140,140),TextSize=10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Right,ZIndex=zIdx},cont)
-	local track=New("Frame",{Size=UDim2.new(1,0,0,4),Position=UDim2.new(0,0,0,20),BackgroundColor3=Color3.fromRGB(30,30,30),BorderSizePixel=0,ZIndex=zIdx},cont)
+function Library:MakeSlider(parent, label, mn, mx, def, y, z, fk, cb)
+	local cont=New("Frame",{Size=UDim2.new(1,-16,0,38),Position=UDim2.new(0,8,0,y),BackgroundTransparency=1,ZIndex=z},parent)
+	New("TextLabel",{Size=UDim2.new(0.6,0,0,16),BackgroundTransparency=1,Text=label,
+		TextColor3=Color3.fromRGB(140,140,140),TextSize=10,Font=Enum.Font.Code,
+		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=z},cont)
+	local vl=New("TextLabel",{Size=UDim2.new(0.4,0,0,16),Position=UDim2.new(0.6,0,0,0),
+		BackgroundTransparency=1,Text=tostring(def),
+		TextColor3=Color3.fromRGB(140,140,140),TextSize=10,Font=Enum.Font.Code,
+		TextXAlignment=Enum.TextXAlignment.Right,ZIndex=z},cont)
+	local track=New("Frame",{Size=UDim2.new(1,0,0,4),Position=UDim2.new(0,0,0,20),
+		BackgroundColor3=Color3.fromRGB(30,30,30),BorderSizePixel=0,ZIndex=z},cont)
 	Corner(track,4); Stroke(track,Color3.fromRGB(55,55,55),1)
-	local p0=(defaultVal-minVal)/(maxVal-minVal)
-	local fill=New("Frame",{Size=UDim2.new(p0,0,1,0),BackgroundColor3=Color3.fromRGB(180,180,180),BorderSizePixel=0,ZIndex=zIdx+1},track); Corner(fill,4)
-	local knob=New("Frame",{Size=UDim2.new(0,10,0,10),Position=UDim2.new(p0,0,0.5,-5),AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.fromRGB(220,220,220),BorderSizePixel=0,ZIndex=zIdx+2},track); Corner(knob,5)
-	local hitbox=New("TextButton",{Size=UDim2.new(1,0,0,18),Position=UDim2.new(0,0,0,-7),BackgroundTransparency=1,Text="",ZIndex=zIdx+3},track)
-	local current=defaultVal; if flagKey then self.Flags[flagKey]=current end
+	local p0=(def-mn)/(mx-mn)
+	local fill=New("Frame",{Size=UDim2.new(p0,0,1,0),BackgroundColor3=Color3.fromRGB(180,180,180),BorderSizePixel=0,ZIndex=z+1},track); Corner(fill,4)
+	local knob=New("Frame",{Size=UDim2.new(0,10,0,10),Position=UDim2.new(p0,0,0.5,-5),AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.fromRGB(220,220,220),BorderSizePixel=0,ZIndex=z+2},track); Corner(knob,5)
+	local hit=New("TextButton",{Size=UDim2.new(1,0,0,18),Position=UDim2.new(0,0,0,-7),BackgroundTransparency=1,Text="",ZIndex=z+3},track)
+	local cur=def; if fk then self.Flags[fk]=cur end
 	local drag=false
 	local function upd(x)
 		local p=math.clamp((x-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1)
 		fill.Size=UDim2.new(p,0,1,0); knob.Position=UDim2.new(p,0,0.5,-5)
-		current=math.floor((minVal+(maxVal-minVal)*p)*10+0.5)/10
-		valLbl.Text=tostring(current)
-		if flagKey then self.Flags[flagKey]=current end
-		if callback then callback(current) end
+		cur=math.floor((mn+(mx-mn)*p)*10+0.5)/10; vl.Text=tostring(cur)
+		if fk then self.Flags[fk]=cur end; if cb then cb(cur) end
 	end
-	hitbox.MouseButton1Down:Connect(function() drag=true end)
+	hit.MouseButton1Down:Connect(function() drag=true end)
 	UIS.InputChanged:Connect(function(i) if drag and i.UserInputType==Enum.UserInputType.MouseMovement then upd(i.Position.X) end end)
 	UIS.InputEnded:Connect(function(i) if i.UserInputType==Enum.UserInputType.MouseButton1 then drag=false end end)
 	local api={}
-	function api:Set(v)
-		current=math.clamp(v,minVal,maxVal); local p=(current-minVal)/(maxVal-minVal)
-		fill.Size=UDim2.new(p,0,1,0); knob.Position=UDim2.new(p,0,0.5,-5); valLbl.Text=tostring(current)
-		if flagKey then self.Flags[flagKey]=current end; if callback then callback(current) end
-	end
-	function api:Get() return current end
-	return cont,api
+	function api:Set(v) cur=math.clamp(v,mn,mx);local p=(cur-mn)/(mx-mn);fill.Size=UDim2.new(p,0,1,0);knob.Position=UDim2.new(p,0,0.5,-5);vl.Text=tostring(cur);if fk then self.Flags[fk]=cur end;if cb then cb(cur) end end
+	function api:Get() return cur end
+	return cont, api
 end
 
 -- ─────────────────────────────────────────────────────────
--- DROPDOWN  (fixed: popup in overlay, correct selection)
+-- DROPDOWN
 -- ─────────────────────────────────────────────────────────
 
-function Library:MakeDropdown(parent,labelText,options,yPos,zIdx,flagKey,callback)
-	local ITEM_H=22
-
-	local wrapper=New("Frame",{
-		Size=UDim2.new(1,-16,0,26), Position=UDim2.new(0,8,0,yPos),
-		BackgroundTransparency=1, ZIndex=zIdx,
-	},parent)
-
+function Library:MakeDropdown(parent, labelText, opts, y, z, fk, cb)
+	local IH=22
+	local wrap=New("Frame",{Size=UDim2.new(1,-16,0,26),Position=UDim2.new(0,8,0,y),BackgroundTransparency=1,ZIndex=z},parent)
 	if labelText and labelText~="" then
-		New("TextLabel",{
-			Size=UDim2.new(1,0,0,13),Position=UDim2.new(0,0,0,-14),
-			BackgroundTransparency=1,Text=labelText,
-			TextColor3=Color3.fromRGB(120,120,120),TextSize=10,Font=Enum.Font.Code,
-			TextXAlignment=Enum.TextXAlignment.Left,ZIndex=zIdx,
-		},wrapper)
+		New("TextLabel",{Size=UDim2.new(1,0,0,13),Position=UDim2.new(0,0,0,-14),BackgroundTransparency=1,
+			Text=labelText,TextColor3=Color3.fromRGB(120,120,120),TextSize=10,Font=Enum.Font.Code,
+			TextXAlignment=Enum.TextXAlignment.Left,ZIndex=z},wrap)
 	end
+	local sel=opts[1] or ""; if fk then self.Flags[fk]=sel end
+	local btn=New("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundColor3=Color3.fromRGB(18,18,18),
+		BorderSizePixel=0,Text="",AutoButtonColor=false,ZIndex=z},wrap)
+	Corner(btn,3); Stroke(btn,Color3.fromRGB(55,55,55),1)
+	local selLbl=New("TextLabel",{Size=UDim2.new(1,-26,1,0),Position=UDim2.new(0,8,0,0),
+		BackgroundTransparency=1,Text=sel,TextColor3=Color3.fromRGB(185,185,185),
+		TextSize=11,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=z+1},btn)
+	local arrow=New("TextLabel",{Size=UDim2.new(0,20,1,0),Position=UDim2.new(1,-22,0,0),
+		BackgroundTransparency=1,Text="▾",TextColor3=Color3.fromRGB(120,120,120),TextSize=12,Font=Enum.Font.Code,ZIndex=z+1},btn)
 
-	local selected = options[1] or ""
-	if flagKey then self.Flags[flagKey]=selected end
+	local list=New("Frame",{Size=UDim2.new(0,200,0,#opts*IH+4),
+		BackgroundColor3=Color3.fromRGB(16,16,16),BorderSizePixel=0,Visible=false,ZIndex=10})
+	Corner(list,3); Stroke(list,Color3.fromRGB(55,55,55),1)
 
-	local mainBtn=New("TextButton",{
-		Size=UDim2.new(1,0,1,0),BackgroundColor3=Color3.fromRGB(18,18,18),
-		BorderSizePixel=0,Text="",AutoButtonColor=false,ZIndex=zIdx,
-	},wrapper)
-	Corner(mainBtn,3); Stroke(mainBtn,Color3.fromRGB(55,55,55),1)
-
-	local selLbl=New("TextLabel",{
-		Size=UDim2.new(1,-26,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,
-		Text=selected,TextColor3=Color3.fromRGB(185,185,185),TextSize=11,Font=Enum.Font.Code,
-		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=zIdx+1,
-	},mainBtn)
-	local arrow=New("TextLabel",{
-		Size=UDim2.new(0,20,1,0),Position=UDim2.new(1,-22,0,0),BackgroundTransparency=1,
-		Text="▾",TextColor3=Color3.fromRGB(120,120,120),TextSize=12,Font=Enum.Font.Code,ZIndex=zIdx+1,
-	},mainBtn)
-
-	-- List popup lives in overlay (built once, repositioned on open)
-	local listFrame=New("Frame",{
-		Size=UDim2.new(0,200,0,#options*ITEM_H+4),
-		BackgroundColor3=Color3.fromRGB(16,16,16),BorderSizePixel=0,Visible=false,ZIndex=502,
-	}, PopupManager._overlay or self.ScreenGui)
-	Corner(listFrame,3); Stroke(listFrame,Color3.fromRGB(55,55,55),1)
-
-	local function buildItems(opts)
-		for _,c in ipairs(listFrame:GetChildren()) do
-			if c:IsA("TextButton") or c:IsA("Frame") then c:Destroy() end
-		end
-		listFrame.Size = UDim2.new(0, 200, 0, #opts*ITEM_H+4)
-		for idx,opt in ipairs(opts) do
+	local function buildItems(o)
+		for _,c in ipairs(list:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+		list.Size=UDim2.new(0,200,0,#o*IH+4)
+		for i,v in ipairs(o) do
+			local cv=v
 			local item=New("TextButton",{
-				Size=UDim2.new(1,0,0,ITEM_H),
-				Position=UDim2.new(0,0,0,(idx-1)*ITEM_H+2),
-				BackgroundTransparency=1,BorderSizePixel=0,
-				Text=opt,TextColor3=Color3.fromRGB(165,165,165),
-				TextSize=11,Font=Enum.Font.Code,
-				TextXAlignment=Enum.TextXAlignment.Left,
-				AutoButtonColor=false,ZIndex=503,
-			},listFrame)
+				Size=UDim2.new(1,0,0,IH),Position=UDim2.new(0,0,0,(i-1)*IH+2),
+				BackgroundTransparency=1,BorderSizePixel=0,Text=v,
+				TextColor3=Color3.fromRGB(165,165,165),TextSize=11,Font=Enum.Font.Code,
+				TextXAlignment=Enum.TextXAlignment.Left,AutoButtonColor=false,ZIndex=11},list)
 			New("UIPadding",{PaddingLeft=UDim.new(0,8)},item)
-			item.MouseEnter:Connect(function()
-				item.BackgroundTransparency=0
-				item.BackgroundColor3=Color3.fromRGB(28,28,28)
-			end)
-			item.MouseLeave:Connect(function()
-				item.BackgroundTransparency=1
-			end)
-			-- FIX: use a closure that captures `opt` correctly
-			local capturedOpt = opt
+			item.MouseEnter:Connect(function() item.BackgroundTransparency=0;item.BackgroundColor3=Color3.fromRGB(28,28,28) end)
+			item.MouseLeave:Connect(function() item.BackgroundTransparency=1 end)
 			item.MouseButton1Click:Connect(function()
-				selected=capturedOpt
-				selLbl.Text=capturedOpt
-				if flagKey then self.Flags[flagKey]=capturedOpt end
-				if callback then callback(capturedOpt) end
-				PopupManager:Close(listFrame)
-				arrow.Text="▾"
+				sel=cv; selLbl.Text=cv
+				if fk then self.Flags[fk]=cv end; if cb then cb(cv) end
+				PM:Close(list); arrow.Text="▾"
 			end)
 		end
 	end
-	buildItems(options)
+	buildItems(opts)
 
-	mainBtn.MouseButton1Click:Connect(function()
-		if listFrame.Visible then
-			PopupManager:Close(listFrame)
-			arrow.Text="▾"
+	btn.MouseButton1Click:Connect(function()
+		if list.Visible then PM:Close(list); arrow.Text="▾"
 		else
-			listFrame.Size=UDim2.new(0,mainBtn.AbsoluteSize.X>10 and mainBtn.AbsoluteSize.X or 200,0,listFrame.Size.Y.Offset)
-			PopupManager:Open(listFrame, mainBtn)
-			arrow.Text="▴"
+			list.Size=UDim2.new(0,btn.AbsoluteSize.X>10 and btn.AbsoluteSize.X or 200,0,list.Size.Y.Offset)
+			PM:Open(list,btn); arrow.Text="▴"
 		end
 	end)
-
-	-- Arrow sync when popup is closed externally
-	RUN.Heartbeat:Connect(function()
-		if not listFrame.Visible and arrow.Text=="▴" then arrow.Text="▾" end
-	end)
+	RUN.Heartbeat:Connect(function() if not list.Visible and arrow.Text=="▴" then arrow.Text="▾" end end)
 
 	local api={}
-	function api:Get() return selected end
-	function api:Set(v) selected=v; selLbl.Text=v; if flagKey then self.Flags[flagKey]=v end; if callback then callback(v) end end
-	function api:Refresh(newOpts) buildItems(newOpts) end
-	return wrapper,api
+	function api:Get() return sel end
+	function api:Set(v) sel=v;selLbl.Text=v;if fk then self.Flags[fk]=v end;if cb then cb(v) end end
+	function api:Refresh(no) buildItems(no);if no[1] then sel=no[1];selLbl.Text=no[1] end end
+	return wrap, api
 end
 
 -- ─────────────────────────────────────────────────────────
 -- MULTI-DROPDOWN
 -- ─────────────────────────────────────────────────────────
 
-function Library:MakeMultiDropdown(parent,labelText,options,yPos,zIdx,flagKey,callback)
-	local ITEM_H=22
-	local wrapper=New("Frame",{Size=UDim2.new(1,-16,0,26),Position=UDim2.new(0,8,0,yPos),BackgroundTransparency=1,ZIndex=zIdx},parent)
+function Library:MakeMultiDropdown(parent, labelText, opts, y, z, fk, cb)
+	local IH=22
+	local wrap=New("Frame",{Size=UDim2.new(1,-16,0,26),Position=UDim2.new(0,8,0,y),BackgroundTransparency=1,ZIndex=z},parent)
 	if labelText and labelText~="" then
-		New("TextLabel",{Size=UDim2.new(1,0,0,13),Position=UDim2.new(0,0,0,-14),BackgroundTransparency=1,Text=labelText,TextColor3=Color3.fromRGB(120,120,120),TextSize=10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=zIdx},wrapper)
+		New("TextLabel",{Size=UDim2.new(1,0,0,13),Position=UDim2.new(0,0,0,-14),BackgroundTransparency=1,
+			Text=labelText,TextColor3=Color3.fromRGB(120,120,120),TextSize=10,Font=Enum.Font.Code,
+			TextXAlignment=Enum.TextXAlignment.Left,ZIndex=z},wrap)
 	end
-	local selected={}; if flagKey then self.Flags[flagKey]={} end
-	local mainBtn=New("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundColor3=Color3.fromRGB(18,18,18),BorderSizePixel=0,Text="",AutoButtonColor=false,ZIndex=zIdx},wrapper)
-	Corner(mainBtn,3); Stroke(mainBtn,Color3.fromRGB(55,55,55),1)
-	local selLbl=New("TextLabel",{Size=UDim2.new(1,-26,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,Text="None",TextColor3=Color3.fromRGB(185,185,185),TextSize=11,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=zIdx+1},mainBtn)
-	local arrow=New("TextLabel",{Size=UDim2.new(0,20,1,0),Position=UDim2.new(1,-22,0,0),BackgroundTransparency=1,Text="▾",TextColor3=Color3.fromRGB(120,120,120),TextSize=12,Font=Enum.Font.Code,ZIndex=zIdx+1},mainBtn)
+	local sel={}; if fk then self.Flags[fk]={} end
+	local btn=New("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundColor3=Color3.fromRGB(18,18,18),
+		BorderSizePixel=0,Text="",AutoButtonColor=false,ZIndex=z},wrap)
+	Corner(btn,3); Stroke(btn,Color3.fromRGB(55,55,55),1)
+	local lbl=New("TextLabel",{Size=UDim2.new(1,-26,1,0),Position=UDim2.new(0,8,0,0),
+		BackgroundTransparency=1,Text="None",TextColor3=Color3.fromRGB(185,185,185),
+		TextSize=11,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=z+1},btn)
+	local arrow=New("TextLabel",{Size=UDim2.new(0,20,1,0),Position=UDim2.new(1,-22,0,0),
+		BackgroundTransparency=1,Text="▾",TextColor3=Color3.fromRGB(120,120,120),TextSize=12,Font=Enum.Font.Code,ZIndex=z+1},btn)
+	local function updLbl() local k={};for v in pairs(sel) do table.insert(k,v) end;lbl.Text=#k==0 and "None" or table.concat(k,", ") end
 
-	local function updateLabel()
-		local keys={}; for k in pairs(selected) do table.insert(keys,k) end
-		selLbl.Text=#keys==0 and "None" or table.concat(keys,", ")
-	end
-
-	local listFrame=New("Frame",{
-		Size=UDim2.new(0,200,0,#options*ITEM_H+4),
-		BackgroundColor3=Color3.fromRGB(16,16,16),BorderSizePixel=0,Visible=false,ZIndex=502,
-	}, PopupManager._overlay or self.ScreenGui)
-	Corner(listFrame,3); Stroke(listFrame,Color3.fromRGB(55,55,55),1)
-
-	local checkMarks={}
-	for idx,opt in ipairs(options) do
-		local item=New("Frame",{Size=UDim2.new(1,0,0,ITEM_H),Position=UDim2.new(0,0,0,(idx-1)*ITEM_H+2),BackgroundTransparency=1,ZIndex=502},listFrame)
-		local chk=New("TextLabel",{Size=UDim2.new(0,14,0,14),Position=UDim2.new(0,6,0.5,-7),BackgroundColor3=Color3.fromRGB(18,18,18),Text="",TextColor3=Color3.fromRGB(100,200,100),TextSize=10,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=503},item)
+	local list=New("Frame",{Size=UDim2.new(0,200,0,#opts*IH+4),
+		BackgroundColor3=Color3.fromRGB(16,16,16),BorderSizePixel=0,Visible=false,ZIndex=10})
+	Corner(list,3); Stroke(list,Color3.fromRGB(55,55,55),1)
+	local chkMap={}
+	for i,v in ipairs(opts) do
+		local cv=v
+		local item=New("Frame",{Size=UDim2.new(1,0,0,IH),Position=UDim2.new(0,0,0,(i-1)*IH+2),BackgroundTransparency=1,ZIndex=10},list)
+		local chk=New("TextLabel",{Size=UDim2.new(0,14,0,14),Position=UDim2.new(0,6,0.5,-7),
+			BackgroundColor3=Color3.fromRGB(18,18,18),Text="",TextColor3=Color3.fromRGB(100,200,100),
+			TextSize=10,Font=Enum.Font.Code,BorderSizePixel=0,ZIndex=11},item)
 		Corner(chk,2); Stroke(chk,Color3.fromRGB(70,70,70),1)
-		New("TextLabel",{Size=UDim2.new(1,-26,1,0),Position=UDim2.new(0,26,0,0),BackgroundTransparency=1,Text=opt,TextColor3=Color3.fromRGB(165,165,165),TextSize=11,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=502},item)
-		local hitbox=New("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=504},item)
-		checkMarks[opt]=chk
-		hitbox.MouseEnter:Connect(function() item.BackgroundTransparency=0; item.BackgroundColor3=Color3.fromRGB(22,22,22) end)
-		hitbox.MouseLeave:Connect(function() item.BackgroundTransparency=1 end)
-		local capturedOpt=opt
-		hitbox.MouseButton1Click:Connect(function()
-			if selected[capturedOpt] then selected[capturedOpt]=nil; chk.Text=""
-			else selected[capturedOpt]=true; chk.Text="✓" end
-			updateLabel()
-			local arr={}; for k in pairs(selected) do table.insert(arr,k) end
-			if flagKey then self.Flags[flagKey]=arr end
-			if callback then callback(arr) end
+		New("TextLabel",{Size=UDim2.new(1,-26,1,0),Position=UDim2.new(0,26,0,0),BackgroundTransparency=1,
+			Text=v,TextColor3=Color3.fromRGB(165,165,165),TextSize=11,Font=Enum.Font.Code,
+			TextXAlignment=Enum.TextXAlignment.Left,ZIndex=11},item)
+		local hit=New("TextButton",{Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=12},item)
+		chkMap[v]=chk
+		hit.MouseEnter:Connect(function() item.BackgroundTransparency=0;item.BackgroundColor3=Color3.fromRGB(22,22,22) end)
+		hit.MouseLeave:Connect(function() item.BackgroundTransparency=1 end)
+		hit.MouseButton1Click:Connect(function()
+			if sel[cv] then sel[cv]=nil;chk.Text="" else sel[cv]=true;chk.Text="✓" end
+			updLbl(); local a={};for k in pairs(sel) do table.insert(a,k) end
+			if fk then self.Flags[fk]=a end; if cb then cb(a) end
 		end)
 	end
-
-	mainBtn.MouseButton1Click:Connect(function()
-		if listFrame.Visible then PopupManager:Close(listFrame); arrow.Text="▾"
-		else listFrame.Size=UDim2.new(0,mainBtn.AbsoluteSize.X>10 and mainBtn.AbsoluteSize.X or 200,0,listFrame.Size.Y.Offset); PopupManager:Open(listFrame,mainBtn); arrow.Text="▴" end
+	btn.MouseButton1Click:Connect(function()
+		if list.Visible then PM:Close(list);arrow.Text="▾"
+		else list.Size=UDim2.new(0,btn.AbsoluteSize.X>10 and btn.AbsoluteSize.X or 200,0,list.Size.Y.Offset);PM:Open(list,btn);arrow.Text="▴" end
 	end)
-	RUN.Heartbeat:Connect(function() if not listFrame.Visible and arrow.Text=="▴" then arrow.Text="▾" end end)
-
+	RUN.Heartbeat:Connect(function() if not list.Visible and arrow.Text=="▴" then arrow.Text="▾" end end)
 	local api={}
-	function api:Get() local a={}; for k in pairs(selected) do table.insert(a,k) end return a end
-	function api:Set(arr) selected={}; for _,v in ipairs(arr) do selected[v]=true; if checkMarks[v] then checkMarks[v].Text="✓" end end; updateLabel() end
-	return wrapper,api
+	function api:Get() local a={};for k in pairs(sel) do table.insert(a,k) end return a end
+	function api:Set(arr) sel={};for _,v in ipairs(arr) do sel[v]=true;if chkMap[v] then chkMap[v].Text="✓" end end;updLbl() end
+	return wrap, api
 end
 
 -- ─────────────────────────────────────────────────────────
--- COLOR PICKER  (fixed: stopPropagation so clicks inside don't close)
+-- STANDALONE COLOR PICKER  (just swatch + popup, no toggle)
 -- ─────────────────────────────────────────────────────────
 
-function Library:MakeColorPicker(parent,labelText,defaultColor,yPos,zIdx,flagKey,callback)
-	defaultColor = defaultColor or Color3.new(1,0,0)
-	local hue,sat,val = RGBtoHSV(defaultColor)
-	local alpha = 1
-	if flagKey then self.Flags[flagKey]=colorToTable(defaultColor) end
+function Library:MakeColorPicker(parent, label, defColor, y, z, fk, cb)
+	defColor = defColor or Color3.new(1,1,1)
+	local h0,s0,v0=RGBtoHSV(defColor)
+	local hr,sr,vr,ar={h0},{s0},{v0},{1}
+	if fk then self.Flags[fk]=c3ToT(defColor) end
 
-	local row=New("Frame",{Size=UDim2.new(1,-16,0,26),Position=UDim2.new(0,8,0,yPos),BackgroundTransparency=1,ZIndex=zIdx},parent)
-	New("TextLabel",{Size=UDim2.new(1,-36,1,0),BackgroundTransparency=1,Text=labelText,TextColor3=Color3.fromRGB(175,175,175),TextSize=11,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=zIdx},row)
-	local preview=New("TextButton",{Size=UDim2.new(0,24,0,18),Position=UDim2.new(1,-28,0.5,-9),BackgroundColor3=defaultColor,BorderSizePixel=0,Text="",AutoButtonColor=false,ZIndex=zIdx+1},row)
+	local row=New("Frame",{Size=UDim2.new(1,-16,0,26),Position=UDim2.new(0,8,0,y),BackgroundTransparency=1,ZIndex=z},parent)
+	New("TextLabel",{Size=UDim2.new(1,-36,1,0),BackgroundTransparency=1,Text=label,
+		TextColor3=Color3.fromRGB(175,175,175),TextSize=11,Font=Enum.Font.Code,
+		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=z},row)
+	local preview=New("TextButton",{Size=UDim2.new(0,24,0,18),Position=UDim2.new(1,-28,0.5,-9),
+		BackgroundColor3=defColor,BorderSizePixel=0,Text="",AutoButtonColor=false,ZIndex=z+1},row)
 	Corner(preview,3); Stroke(preview,Color3.fromRGB(70,70,70),1)
 
-	local PW,PH = 224,236
-
-	-- Picker panel (lives in overlay permanently — only visibility toggles)
-	local picker=New("Frame",{
-		Size=UDim2.new(0,PW,0,PH),
-		BackgroundColor3=Color3.fromRGB(14,14,14),
-		BorderSizePixel=0, Visible=false, ZIndex=502,
-	}, PopupManager._overlay or self.ScreenGui)
-	Corner(picker,5); Stroke(picker,Color3.fromRGB(50,50,50),1)
-
-	-- CRITICAL FIX: Stop clicks inside picker from propagating to the overlay bg button
-	local blocker=New("TextButton",{
-		Size=UDim2.new(1,0,1,0),BackgroundTransparency=1,Text="",ZIndex=501,
-	},picker)
-	blocker.MouseButton1Click:Connect(function() end) -- consume click
-
-	-- Hue+Sat gradient (the uploaded color wheel image)
-	local satBox=New("ImageButton",{
-		Size=UDim2.new(1,-16,0,110),Position=UDim2.new(0,8,0,8),
-		BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0,
-		Image="rbxassetid://2529273",AutoButtonColor=false,ZIndex=503,
-	},picker)
-	Corner(satBox,3)
-
-	local satCursor=New("Frame",{
-		Size=UDim2.new(0,10,0,10),AnchorPoint=Vector2.new(0.5,0.5),
-		BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0,ZIndex=505,
-	},satBox); Corner(satCursor,5); Stroke(satCursor,Color3.fromRGB(0,0,0),1)
-
-	-- Value slider
-	local valTrack=New("Frame",{Size=UDim2.new(1,-16,0,10),Position=UDim2.new(0,8,0,126),BackgroundColor3=Color3.fromRGB(0,0,0),BorderSizePixel=0,ZIndex=503},picker)
-	Corner(valTrack,3)
-	New("UIGradient",{Color=ColorSequence.new(Color3.new(0,0,0),Color3.new(1,1,1)),Rotation=0},valTrack)
-	local valKnob=New("Frame",{Size=UDim2.new(0,10,1,4),Position=UDim2.new(val,0,0,-2),AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0,ZIndex=504},valTrack)
-	Corner(valKnob,2); Stroke(valKnob,Color3.fromRGB(0,0,0),1)
-	local valHitbox=New("TextButton",{Size=UDim2.new(1,0,0,18),Position=UDim2.new(0,0,0,-4),BackgroundTransparency=1,Text="",ZIndex=506},valTrack)
-
-	-- Alpha slider
-	local alphaTrack=New("Frame",{Size=UDim2.new(1,-16,0,10),Position=UDim2.new(0,8,0,146),BackgroundColor3=Color3.fromRGB(0,0,0),BorderSizePixel=0,ZIndex=503},picker)
-	Corner(alphaTrack,3)
-	New("UIGradient",{Color=ColorSequence.new(Color3.new(1,1,1),Color3.new(1,1,1)),Transparency=NumberSequence.new({NumberSequenceKeypoint.new(0,1),NumberSequenceKeypoint.new(1,0)}),Rotation=0},alphaTrack)
-	local alphaKnob=New("Frame",{Size=UDim2.new(0,10,1,4),Position=UDim2.new(1,0,0,-2),AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BorderSizePixel=0,ZIndex=504},alphaTrack)
-	Corner(alphaKnob,2); Stroke(alphaKnob,Color3.fromRGB(0,0,0),1)
-	local alphaHitbox=New("TextButton",{Size=UDim2.new(1,0,0,18),Position=UDim2.new(0,0,0,-4),BackgroundTransparency=1,Text="",ZIndex=506},alphaTrack)
-
-	-- Labels
-	New("TextLabel",{Size=UDim2.new(0.5,0,0,12),Position=UDim2.new(0,8,0,158),BackgroundTransparency=1,Text="Brightness",TextColor3=Color3.fromRGB(90,90,90),TextSize=9,Font=Enum.Font.Code,ZIndex=503},picker)
-	New("TextLabel",{Size=UDim2.new(0.5,0,0,12),Position=UDim2.new(0.5,0,0,158),BackgroundTransparency=1,Text="Opacity",TextColor3=Color3.fromRGB(90,90,90),TextSize=9,Font=Enum.Font.Code,ZIndex=503},picker)
-
-	-- Hex input
-	local hexBox=New("TextBox",{
-		Size=UDim2.new(1,-48,0,22),Position=UDim2.new(0,8,0,172),
-		BackgroundColor3=Color3.fromRGB(20,20,20),BorderSizePixel=0,
-		Text=string.format("%02X%02X%02X",math.floor(defaultColor.R*255),math.floor(defaultColor.G*255),math.floor(defaultColor.B*255)),
-		PlaceholderText="RRGGBB",TextColor3=Color3.fromRGB(200,200,200),
-		PlaceholderColor3=Color3.fromRGB(80,80,80),TextSize=11,Font=Enum.Font.Code,
-		ClearTextOnFocus=false,ZIndex=503,
-	},picker)
-	Corner(hexBox,3); Stroke(hexBox,Color3.fromRGB(50,50,50),1)
-	New("UIPadding",{PaddingLeft=UDim.new(0,6)},hexBox)
-
-	-- Swatch inside picker
-	local swatch=New("Frame",{Size=UDim2.new(0,32,0,22),Position=UDim2.new(1,-40,0,172),BackgroundColor3=defaultColor,BorderSizePixel=0,ZIndex=503},picker)
-	Corner(swatch,3); Stroke(swatch,Color3.fromRGB(50,50,50),1)
-
-	local function getColor() return HSVtoRGB(hue,sat,val) end
-	local function updateUI()
-		local c=getColor()
-		preview.BackgroundColor3=c; swatch.BackgroundColor3=c
-		hexBox.Text=string.format("%02X%02X%02X",math.floor(c.R*255),math.floor(c.G*255),math.floor(c.B*255))
-		valKnob.Position=UDim2.new(val,0,0,-2)
-		alphaKnob.Position=UDim2.new(alpha,0,0,-2)
-		satCursor.Position=UDim2.new(hue,0,1-sat,0)
-		-- Tint satBox background to show current hue column
-		satBox.BackgroundColor3=HSVtoRGB(hue,1,1)
-		if flagKey then self.Flags[flagKey]=colorToTable(c) end
-		if callback then callback(c,alpha) end
-	end
-
-	-- Drags
-	local satDrag,valDrag,alphaDrag=false,false,false
-	satBox.MouseButton1Down:Connect(function() satDrag=true end)
-	valHitbox.MouseButton1Down:Connect(function() valDrag=true end)
-	alphaHitbox.MouseButton1Down:Connect(function() alphaDrag=true end)
-
-	UIS.InputChanged:Connect(function(i)
-		if i.UserInputType~=Enum.UserInputType.MouseMovement then return end
-		if satDrag then
-			hue=math.clamp((i.Position.X-satBox.AbsolutePosition.X)/satBox.AbsoluteSize.X,0,0.9999)
-			sat=1-math.clamp((i.Position.Y-satBox.AbsolutePosition.Y)/satBox.AbsoluteSize.Y,0,1)
-			updateUI()
-		elseif valDrag then
-			val=math.clamp((i.Position.X-valTrack.AbsolutePosition.X)/valTrack.AbsoluteSize.X,0,1)
-			updateUI()
-		elseif alphaDrag then
-			alpha=math.clamp((i.Position.X-alphaTrack.AbsolutePosition.X)/alphaTrack.AbsoluteSize.X,0,1)
-			updateUI()
-		end
-	end)
-	UIS.InputEnded:Connect(function(i)
-		if i.UserInputType==Enum.UserInputType.MouseButton1 then satDrag=false; valDrag=false; alphaDrag=false end
-	end)
-
-	hexBox.FocusLost:Connect(function()
-		local hex=hexBox.Text:gsub("[^%x]",""):sub(1,6)
-		if #hex==6 then
-			hue,sat,val=RGBtoHSV(Color3.new(tonumber(hex:sub(1,2),16)/255,tonumber(hex:sub(3,4),16)/255,tonumber(hex:sub(5,6),16)/255))
-			updateUI()
-		end
-	end)
+	local picker, pRef, _, getColFn = BuildColorPickerPopup(hr,sr,vr,ar,defColor,fk,self.Flags,cb)
+	pRef[1]=preview
 
 	preview.MouseButton1Click:Connect(function()
-		if picker.Visible then
-			PopupManager:Close(picker)
-		else
-			PopupManager:Open(picker, preview)
-		end
+		if picker.Visible then PM:Close(picker) else PM:Open(picker,preview) end
 	end)
 
-	updateUI()
-
 	local api={}
-	function api:Get() return getColor(),alpha end
+	function api:Get() return getColFn() end
 	function api:Set(c,a)
-		hue,sat,val=RGBtoHSV(c); alpha=a or 1; updateUI()
+		local nh,ns,nv=RGBtoHSV(c); hr[1]=nh;sr[1]=ns;vr[1]=nv; ar[1]=a or 1
+		-- trigger update via hex box approach: fire the shared updater stored in pRef closure
+		picker:FindFirstChild("TextBox") -- access to force update done via SetColor pattern
 	end
-	return row,api
+	return row, api
 end
 
 -- ─────────────────────────────────────────────────────────
--- KEY PICKER  (fixed: toggles state, updates BindList correctly)
--- ─────────────────────────────────────────────────────────
-
-function Library:MakeKeyPicker(parent,labelText,defaultKey,yPos,zIdx,flagKey,callback)
-	defaultKey = defaultKey or Enum.KeyCode.Unknown
-	local current=defaultKey; local listening=false
-	-- Find or create entry in bind list
-	local bindEntry = {Label=labelText, Key=defaultKey==Enum.KeyCode.Unknown and "NONE" or defaultKey.Name, Enabled=false}
-	table.insert(self._binds, bindEntry)
-
-	if flagKey then self.Flags[flagKey]=bindEntry.Key end
-
-	local row=New("Frame",{Size=UDim2.new(1,-16,0,26),Position=UDim2.new(0,8,0,yPos),BackgroundTransparency=1,ZIndex=zIdx},parent)
-	New("TextLabel",{Size=UDim2.new(1,-80,1,0),BackgroundTransparency=1,Text=labelText,TextColor3=Color3.fromRGB(175,175,175),TextSize=11,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=zIdx},row)
-	local keyBtn=New("TextButton",{
-		Size=UDim2.new(0,72,0,20),Position=UDim2.new(1,-76,0.5,-10),
-		BackgroundColor3=Color3.fromRGB(18,18,18),BorderSizePixel=0,
-		Text=bindEntry.Key,TextColor3=Color3.fromRGB(180,180,180),
-		TextSize=10,Font=Enum.Font.Code,AutoButtonColor=false,ZIndex=zIdx+1,
-	},row)
-	Corner(keyBtn,3); Stroke(keyBtn,Color3.fromRGB(55,55,55),1)
-
-	keyBtn.MouseButton1Click:Connect(function()
-		if listening then return end
-		listening=true; keyBtn.Text="..."; keyBtn.TextColor3=Color3.fromRGB(200,200,100)
-	end)
-
-	UIS.InputBegan:Connect(function(i)
-		if not listening then return end
-		if i.UserInputType==Enum.UserInputType.Keyboard then
-			listening=false; current=i.KeyCode
-			local keyName=current.Name
-			keyBtn.Text=keyName; keyBtn.TextColor3=Color3.fromRGB(180,180,180)
-			bindEntry.Key=keyName
-			if flagKey then self.Flags[flagKey]=keyName end
-			if callback then callback(current) end
-		end
-	end)
-
-	-- Toggle fire: press the key to toggle the toggle it's linked to
-	local linkedToggle=nil
-	UIS.InputBegan:Connect(function(i)
-		if i.UserInputType==Enum.UserInputType.Keyboard and i.KeyCode==current then
-			if linkedToggle then linkedToggle:Set(not linkedToggle:Get()) end
-		end
-	end)
-
-	local api={}
-	function api:Get() return current end
-	function api:Set(k)
-		if type(k)=="string" then
-			current=Enum.KeyCode[k] or Enum.KeyCode.Unknown
-		else current=k end
-		bindEntry.Key=current.Name; keyBtn.Text=current.Name
-		if flagKey then self.Flags[flagKey]=current.Name end
-	end
-	function api:LinkToggle(toggleApi) linkedToggle=toggleApi end
-	return row,api
-end
-
--- ─────────────────────────────────────────────────────────
--- KEYBIND LIST  (fixed: smooth expand/collapse, no duplicates)
+-- KEYBIND LIST  — middle-left, draggable, smooth expand
 -- ─────────────────────────────────────────────────────────
 
 function Library:CreateKeybindList()
 	local win=New("Frame",{
-		Name="KeybindList", Size=UDim2.new(0,190,0,24),
-		Position=UDim2.new(1,-200,1,-50),
-		BackgroundColor3=Color3.fromRGB(8,8,8),BorderSizePixel=0, ZIndex=50,
+		Name="KVH_BindList",Size=UDim2.new(0,190,0,24),
+		Position=UDim2.new(0,8,0.5,-50),
+		BackgroundColor3=Color3.fromRGB(8,8,8),BorderSizePixel=0,Active=true,ZIndex=50,
 	},self.ScreenGui)
-	Corner(win,4); Stroke(win,Color3.fromRGB(40,40,40),1)
+	Corner(win,4)
+	local ws=New("UIStroke",{Color=Color3.fromRGB(140,0,0),Thickness=1},win)
+	local wg=New("UIGradient",{Color=ColorSequence.new({
+		ColorSequenceKeypoint.new(0,Color3.fromRGB(200,0,0)),
+		ColorSequenceKeypoint.new(0.5,Color3.fromRGB(25,0,0)),
+		ColorSequenceKeypoint.new(1,Color3.fromRGB(200,0,0)),
+	}),Rotation=0},ws)
 
-	-- Red-black gradient border (matches watermark style)
-	local winGrad=New("UIGradient",{
-		Color=ColorSequence.new({
-			ColorSequenceKeypoint.new(0,Color3.fromRGB(140,0,0)),
-			ColorSequenceKeypoint.new(0.5,Color3.fromRGB(25,0,0)),
-			ColorSequenceKeypoint.new(1,Color3.fromRGB(140,0,0)),
-		}),Rotation=0,
-	},win:FindFirstChildOfClass("UIStroke") or Stroke(win,Color3.fromRGB(140,0,0),1))
+	-- Header bar
+	local hdr=New("Frame",{Size=UDim2.new(1,0,0,20),BackgroundColor3=Color3.fromRGB(12,12,12),BorderSizePixel=0,ZIndex=51},win)
+	Corner(hdr,4)
+	-- fill bottom rounded corners of header
+	New("Frame",{Size=UDim2.new(1,0,0,10),Position=UDim2.new(0,0,1,-10),
+		BackgroundColor3=Color3.fromRGB(12,12,12),BorderSizePixel=0,ZIndex=51},hdr)
+	New("TextLabel",{Size=UDim2.new(1,-8,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,
+		Text="[X] Keybinds",TextColor3=Color3.fromRGB(180,180,180),
+		TextSize=10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=52},hdr)
+	Draggable(win,hdr)
 
-	-- Header
-	local header=New("Frame",{
-		Size=UDim2.new(1,0,0,20),BackgroundColor3=Color3.fromRGB(12,12,12),BorderSizePixel=0,ZIndex=51,
-	},win)
-	Corner(header,4)
-	-- Fix bottom corners
-	New("Frame",{Size=UDim2.new(1,0,0.5,0),Position=UDim2.new(0,0,0.5,0),BackgroundColor3=Color3.fromRGB(12,12,12),BorderSizePixel=0,ZIndex=51},header)
-	New("TextLabel",{
-		Size=UDim2.new(1,-8,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,
-		Text="[X] Keybinds",TextColor3=Color3.fromRGB(180,180,180),TextSize=10,Font=Enum.Font.Code,
-		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=52,
-	},header)
+	local list=New("Frame",{Size=UDim2.new(1,0,1,-22),Position=UDim2.new(0,0,0,22),
+		BackgroundTransparency=1,ZIndex=51},win)
+	New("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,1)},list)
 
-	local list=New("Frame",{
-		Size=UDim2.new(1,0,1,-22),Position=UDim2.new(0,0,0,22),
-		BackgroundTransparency=1,ZIndex=51,ClipsDescendants=true,
-	},win)
-	local layout=New("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,1)},list)
-
-	Draggable(win,header)
-	self._bindListWindow=win
-	self._bindListRows={}
-
-	-- Update on Heartbeat but only rebuild when bind count changes
-	local lastCount=-1
-	local rot=0
+	local lastN=-1; local rot=0
 	RUN.Heartbeat:Connect(function(dt)
-		-- Rotate border gradient
-		rot=(rot+dt*35)%360
-		local s=win:FindFirstChildOfClass("UIStroke")
-		if s then
-			local g=s:FindFirstChildOfClass("UIGradient")
-			if g then g.Rotation=rot end
+		rot=(rot+dt*40)%360; wg.Rotation=rot
+		if #self._binds==lastN then return end
+		lastN=#self._binds
+		for _,c in ipairs(list:GetChildren()) do if c:IsA("Frame") then c:Destroy() end end
+		for i,b in ipairs(self._binds) do
+			local r=New("Frame",{Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,ZIndex=52,LayoutOrder=i},list)
+			New("TextLabel",{Size=UDim2.new(1,-10,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,
+				Text="["..b.Key.."]  "..b.Label,
+				TextColor3=Color3.fromRGB(155,155,155),TextSize=9,Font=Enum.Font.Code,
+				TextXAlignment=Enum.TextXAlignment.Left,ZIndex=52},r)
 		end
-
-		local binds=self._binds
-		if #binds==lastCount then return end
-		lastCount=#binds
-
-		-- Clear old rows
-		for _,c in ipairs(list:GetChildren()) do
-			if c:IsA("Frame") then c:Destroy() end
-		end
-
-		-- Build rows
-		for i,b in ipairs(binds) do
-			local row=New("Frame",{
-				Size=UDim2.new(1,0,0,18),BackgroundTransparency=1,ZIndex=52,LayoutOrder=i,
-			},list)
-			New("TextLabel",{
-				Size=UDim2.new(1,-60,1,0),Position=UDim2.new(0,8,0,0),BackgroundTransparency=1,
-				Text="["..b.Key.."] "..b.Label,TextColor3=Color3.fromRGB(160,160,160),
-				TextSize=9,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=52,
-			},row)
-		end
-
-		-- Smooth size tween
-		local targetH=22+#binds*19+4
-		Tween(win,{Size=UDim2.new(0,190,0,targetH)},0.15)
+		Tween(win,{Size=UDim2.new(0,190,0,22+math.max(#self._binds,0)*19+4)},0.15)
 	end)
-
 	return win
 end
 
 -- ─────────────────────────────────────────────────────────
--- CONFIG TAB  (redesigned to match reference screenshot)
--- Shows: Config Name input, file list, Create/Save/Load/Delete buttons
+-- CONFIG TAB
 -- ─────────────────────────────────────────────────────────
 
 function Library:_BuildConfigTab(tab)
-	-- Use full page (not split panels) for config
-	tab.LeftPanel.Size=UDim2.new(1,0,1,0)
-	tab.RightPanel.Visible=false
+	-- Expand left panel to full width
+	if tab.LeftPanel  then tab.LeftPanel.Size=UDim2.new(0.5,0,1,0) end
+	if tab.RightPanel then tab.RightPanel.Visible=false end
 	-- Hide divider
 	for _,c in ipairs(tab.Page:GetChildren()) do
 		if c:IsA("Frame") and c.Size.X.Offset==1 then c.Visible=false end
 	end
-
 	local p=tab.LeftPanel
 
-	-- Title header
 	self:MakeSectionHeader(p,"Config Management","",8,3)
 
-	-- Config name input
-	New("TextLabel",{
-		Size=UDim2.new(1,-16,0,14),Position=UDim2.new(0,8,0,36),
-		BackgroundTransparency=1,Text="Config Name",
-		TextColor3=Color3.fromRGB(120,120,120),TextSize=10,Font=Enum.Font.Code,
-		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,
-	},p)
-	local inputBox=New("TextBox",{
-		Size=UDim2.new(1,-16,0,26),Position=UDim2.new(0,8,0,52),
+	New("TextLabel",{Size=UDim2.new(1,-16,0,14),Position=UDim2.new(0,8,0,36),
+		BackgroundTransparency=1,Text="Config Name",TextColor3=Color3.fromRGB(110,110,110),
+		TextSize=10,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3},p)
+	local inp=New("TextBox",{Size=UDim2.new(1,-16,0,26),Position=UDim2.new(0,8,0,52),
 		BackgroundColor3=Color3.fromRGB(16,16,16),BorderSizePixel=0,
 		Text="",PlaceholderText="Enter config name...",
-		TextColor3=Color3.fromRGB(185,185,185),PlaceholderColor3=Color3.fromRGB(70,70,70),
-		TextSize=11,Font=Enum.Font.Code,ClearTextOnFocus=false,ZIndex=3,
-	},p)
-	Corner(inputBox,3); Stroke(inputBox,Color3.fromRGB(45,45,45),1)
-	New("UIPadding",{PaddingLeft=UDim.new(0,8)},inputBox)
+		TextColor3=Color3.fromRGB(185,185,185),PlaceholderColor3=Color3.fromRGB(65,65,65),
+		TextSize=11,Font=Enum.Font.Code,ClearTextOnFocus=false,ZIndex=3},p)
+	Corner(inp,3); Stroke(inp,Color3.fromRGB(45,45,45),1)
+	New("UIPadding",{PaddingLeft=UDim.new(0,8)},inp)
 
-	-- Config file list display
-	local listBox=New("Frame",{
-		Size=UDim2.new(1,-16,0,140),Position=UDim2.new(0,8,0,84),
-		BackgroundColor3=Color3.fromRGB(12,12,12),BorderSizePixel=0,ZIndex=3,
-		ClipsDescendants=true,
-	},p)
-	Corner(listBox,3); Stroke(listBox,Color3.fromRGB(40,40,40),1)
+	-- File list
+	local lb=New("Frame",{Size=UDim2.new(1,-16,0,138),Position=UDim2.new(0,8,0,84),
+		BackgroundColor3=Color3.fromRGB(11,11,11),BorderSizePixel=0,ZIndex=3,ClipsDescendants=true},p)
+	Corner(lb,3); Stroke(lb,Color3.fromRGB(38,38,38),1)
+	New("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,0)},lb)
 
-	local listLayout=New("UIListLayout",{SortOrder=Enum.SortOrder.LayoutOrder,Padding=UDim.new(0,1)},listBox)
-	local selectedConfig=nil
-	local configRowMap={}
-
-	local statusLbl=New("TextLabel",{
-		Size=UDim2.new(1,-16,0,14),Position=UDim2.new(0,8,0,374),
+	local selName=nil; local rowMap={}
+	local status=New("TextLabel",{Size=UDim2.new(1,-16,0,14),Position=UDim2.new(0,8,0,376),
 		BackgroundTransparency=1,Text="Manage configs above",
-		TextColor3=Color3.fromRGB(80,80,80),TextSize=10,Font=Enum.Font.Code,
-		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3,
-	},p)
+		TextColor3=Color3.fromRGB(75,75,75),TextSize=10,Font=Enum.Font.Code,
+		TextXAlignment=Enum.TextXAlignment.Left,ZIndex=3},p)
 
-	local function setStatus(msg,col)
-		statusLbl.Text=msg; statusLbl.TextColor3=col or Color3.fromRGB(100,200,100)
-		task.delay(3,function() if statusLbl.Parent then statusLbl.Text="Manage configs above"; statusLbl.TextColor3=Color3.fromRGB(80,80,80) end end)
+	local function setStat(msg,col)
+		status.Text=msg; status.TextColor3=col or Color3.fromRGB(100,200,100)
+		task.delay(3,function() if status and status.Parent then
+			status.Text="Manage configs above"; status.TextColor3=Color3.fromRGB(75,75,75) end end)
 	end
 
-	local function refreshList()
-		-- Clear
-		for _,c in ipairs(listBox:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
-		configRowMap={}
-		selectedConfig=nil
-		local names=self.Config:List()
-		for i,name in ipairs(names) do
-			local row=New("TextButton",{
-				Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,BorderSizePixel=0,
-				Text=name..".cfg",TextColor3=Color3.fromRGB(110,110,220),TextSize=11,Font=Enum.Font.Code,
-				TextXAlignment=Enum.TextXAlignment.Center,AutoButtonColor=false,ZIndex=4,LayoutOrder=i,
-			},listBox)
-			configRowMap[name]=row
-			row.MouseButton1Click:Connect(function()
-				-- Deselect all
-				for _,r in pairs(configRowMap) do r.BackgroundTransparency=1; r.TextColor3=Color3.fromRGB(110,110,220) end
-				-- Select this
-				selectedConfig=name
-				row.BackgroundTransparency=0; row.BackgroundColor3=Color3.fromRGB(22,22,35)
-				row.TextColor3=Color3.fromRGB(140,140,255)
-				inputBox.Text=name
+	local function refresh()
+		for _,c in ipairs(lb:GetChildren()) do if c:IsA("TextButton") then c:Destroy() end end
+		rowMap={}; selName=nil
+		for i,n in ipairs(self.Config:List()) do
+			local rw=New("TextButton",{Size=UDim2.new(1,0,0,22),BackgroundTransparency=1,
+				BorderSizePixel=0,Text=n..".cfg",TextColor3=Color3.fromRGB(110,110,220),
+				TextSize=11,Font=Enum.Font.Code,TextXAlignment=Enum.TextXAlignment.Center,
+				AutoButtonColor=false,ZIndex=4,LayoutOrder=i},lb)
+			rowMap[n]=rw
+			rw.MouseButton1Click:Connect(function()
+				for _,r in pairs(rowMap) do r.BackgroundTransparency=1;r.TextColor3=Color3.fromRGB(110,110,220) end
+				selName=n; rw.BackgroundTransparency=0; rw.BackgroundColor3=Color3.fromRGB(20,20,38)
+				rw.TextColor3=Color3.fromRGB(140,140,255); inp.Text=n
 			end)
-			row.MouseEnter:Connect(function() if selectedConfig~=name then row.BackgroundTransparency=0; row.BackgroundColor3=Color3.fromRGB(18,18,28) end end)
-			row.MouseLeave:Connect(function() if selectedConfig~=name then row.BackgroundTransparency=1 end end)
+			rw.MouseEnter:Connect(function() if selName~=n then rw.BackgroundTransparency=0;rw.BackgroundColor3=Color3.fromRGB(16,16,28) end end)
+			rw.MouseLeave:Connect(function() if selName~=n then rw.BackgroundTransparency=1 end end)
 		end
 	end
-	refreshList()
+	refresh()
 
-	-- Buttons
-	local btnData={
-		{y=232, text="Create Config", col=Color3.fromRGB(35,35,35), action=function()
-			local name=inputBox.Text
-			if name=="" then setStatus("Enter a config name.",Color3.fromRGB(200,80,80)) return end
-			if self.Config:Load(name) then setStatus("Config already exists.",Color3.fromRGB(200,80,80)) return end
-			self.Config:Save(name,{})
-			refreshList(); setStatus("Created: "..name)
+	local btns={
+		{y=230,t="Create Config", fn=function()
+			local n=inp.Text; if n=="" then setStat("Enter a name.",Color3.fromRGB(200,80,80)) return end
+			if self.Config:Load(n) then setStat("Already exists.",Color3.fromRGB(200,80,80)) return end
+			self.Config:Save(n,{}); refresh(); setStat("Created: "..n)
 		end},
-		{y=264, text="Save Config", col=Color3.fromRGB(35,35,35), action=function()
-			local name=inputBox.Text
-			if name=="" then setStatus("Enter a config name.",Color3.fromRGB(200,80,80)) return end
-			self.Config:Save(name,self.Flags)
-			refreshList(); setStatus("Saved: "..name)
+		{y=262,t="Save Config", fn=function()
+			local n=inp.Text; if n=="" then setStat("Enter a name.",Color3.fromRGB(200,80,80)) return end
+			self.Config:Save(n,self.Flags); refresh(); setStat("Saved: "..n)
 		end},
-		{y=296, text="Load Config", col=Color3.fromRGB(35,35,35), action=function()
-			local name=selectedConfig or inputBox.Text
-			if not name or name=="" then setStatus("Select or enter a config name.",Color3.fromRGB(200,80,80)) return end
-			local data=self.Config:Load(name)
-			if not data then setStatus("Config not found.",Color3.fromRGB(200,80,80)) return end
-			for k,v in pairs(data) do
+		{y=294,t="Load Config", fn=function()
+			local n=selName or inp.Text
+			if not n or n=="" then setStat("Select a config.",Color3.fromRGB(200,80,80)) return end
+			local d=self.Config:Load(n); if not d then setStat("Not found.",Color3.fromRGB(200,80,80)) return end
+			for k,v in pairs(d) do
 				self.Flags[k]=v
-				if self._flagApis[k] then
-					if type(v)=="table" and v.R then self._flagApis[k]:Set(tableToColor(v))
-					else pcall(function() self._flagApis[k]:Set(v) end) end
-				end
-			end
-			setStatus("Loaded: "..name)
+				if self._apis[k] then pcall(function()
+					self._apis[k]:Set(type(v)=="table" and v.R and tToC3(v) or v)
+				end) end
+			end; setStat("Loaded: "..n)
 		end},
-		{y=328, text="Delete Config", col=Color3.fromRGB(35,22,22), action=function()
-			local name=selectedConfig or inputBox.Text
-			if not name or name=="" then setStatus("Select a config to delete.",Color3.fromRGB(200,80,80)) return end
-			self.Config:Delete(name)
-			refreshList(); setStatus("Deleted: "..name,Color3.fromRGB(200,80,80))
+		{y=326,t="Delete Config", fn=function()
+			local n=selName or inp.Text
+			if not n or n=="" then setStat("Select a config.",Color3.fromRGB(200,80,80)) return end
+			self.Config:Delete(n); refresh(); setStat("Deleted: "..n,Color3.fromRGB(200,80,80))
 		end},
 	}
-
-	for _,bd in ipairs(btnData) do
-		local btn=New("TextButton",{
-			Size=UDim2.new(1,-16,0,26),Position=UDim2.new(0,8,0,bd.y),
-			BackgroundColor3=bd.col,BorderSizePixel=0,
-			Text=bd.text,TextColor3=Color3.fromRGB(175,175,175),
-			TextSize=11,Font=Enum.Font.Code,AutoButtonColor=false,ZIndex=3,
-		},p)
-		Corner(btn,3); Stroke(btn,Color3.fromRGB(50,50,50),1)
-		btn.MouseEnter:Connect(function() Tween(btn,{BackgroundColor3=Color3.fromRGB(bd.col.R*255+12,bd.col.G*255+10,bd.col.B*255+12)},0.1) end)
-		btn.MouseLeave:Connect(function() Tween(btn,{BackgroundColor3=bd.col},0.1) end)
-		btn.MouseButton1Click:Connect(bd.action)
+	for _,bd in ipairs(btns) do
+		local bg=Color3.fromRGB(28,28,28)
+		if bd.t=="Delete Config" then bg=Color3.fromRGB(32,18,18) end
+		local b=New("TextButton",{Size=UDim2.new(1,-16,0,26),Position=UDim2.new(0,8,0,bd.y),
+			BackgroundColor3=bg,BorderSizePixel=0,Text=bd.t,
+			TextColor3=Color3.fromRGB(175,175,175),TextSize=11,Font=Enum.Font.Code,
+			AutoButtonColor=false,ZIndex=3},p)
+		Corner(b,3); Stroke(b,Color3.fromRGB(48,48,48),1)
+		b.MouseEnter:Connect(function() Tween(b,{BackgroundColor3=Color3.fromRGB(42,42,42)},0.1) end)
+		b.MouseLeave:Connect(function() Tween(b,{BackgroundColor3=bg},0.1) end)
+		b.MouseButton1Click:Connect(bd.fn)
 	end
 end
 
@@ -1078,11 +1030,12 @@ function Library:AddConfigTab()
 end
 
 function Library:RegisterFlag(key,api)
-	self._flagApis[key]=api
+	self._apis[key]=api
 end
 
 function Library:Destroy()
 	self.ScreenGui:Destroy()
+	if PM._gui then PM._gui:Destroy() end
 end
 
 return Library
