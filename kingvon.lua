@@ -366,7 +366,7 @@ local function BuildColorPickerPopup(hR,sR,vR,aR,defColor,fk,flags,cb)
 	local satBox = New("ImageButton",{
 		Size=UDim2.new(1,-16,0,110),Position=UDim2.new(0,8,0,8),
 		BackgroundColor3=HSVtoRGB(hue,1,1),BorderSizePixel=0,
-		Image="rbxassetid://2529273",AutoButtonColor=false,ZIndex=11},picker)
+		Image="rbxassetid://13037988805",AutoButtonColor=false,ZIndex=11},picker)
 	Corner(satBox,3)
 	local cur = New("Frame",{Size=UDim2.new(0,10,0,10),AnchorPoint=Vector2.new(0.5,0.5),
 		BackgroundTransparency=1,BorderSizePixel=0,ZIndex=13},satBox)
