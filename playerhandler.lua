@@ -1,40 +1,63 @@
+-- PlayerHandler.lua
+-- Responsible only for managing players
 
-local PlayerHandler = {}
 local Players = game:GetService("Players")
 
--- Add names or UserIds to ignore specific players
-PlayerHandler.Blacklist = {
-    -- ["PlayerName"] = true,
-    -- [12345678] = true,
+export type PlayerData = {
+	Player: Player,
+	Character: Model?,
+	Humanoid: Humanoid?,
+	Root: BasePart?
 }
 
--- If populated, ONLY these players are tracked (leave empty for all)
-PlayerHandler.Whitelist = {
-    -- ["PlayerName"] = true,
-    -- [12345678] = true,
-}
+local Handler = {}
+Handler.__index = Handler
 
--- Returns filtered list of valid target players
-function PlayerHandler:GetPlayers()
-    local list = {}
-    local lp = Players.LocalPlayer
-
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p == lp then continue end
-        if self.Blacklist[p.Name] or self.Blacklist[p.UserId] then continue end
-        if next(self.Whitelist) and not (self.Whitelist[p.Name] or self.Whitelist[p.UserId]) then continue end
-        table.insert(list, p)
-    end
-
-    return list
+function Handler.new()
+	local self = setmetatable({}, Handler)
+	self.Players = {}
+	return self
 end
 
--- Checks if a specific player should be tracked
-function PlayerHandler:IsTracked(player)
-    if player == Players.LocalPlayer then return false end
-    if self.Blacklist[player.Name] or self.Blacklist[player.UserId] then return false end
-    if next(self.Whitelist) and not (self.Whitelist[player.Name] or self.Whitelist[player.UserId]) then return false end
-    return true
+function Handler:Track(player: Player)
+	if player == Players.LocalPlayer then
+		return
+	end
+
+	local data: PlayerData = {
+		Player = player,
+		Character = nil,
+		Humanoid = nil,
+		Root = nil
+	}
+
+	self.Players[player] = data
+
+	local function characterAdded(char: Model)
+		data.Character = char
+		data.Humanoid = char:WaitForChild("Humanoid",5)
+		data.Root = char:WaitForChild("HumanoidRootPart",5)
+	end
+
+	if player.Character then
+		characterAdded(player.Character)
+	end
+
+	player.CharacterAdded:Connect(characterAdded)
+
+	player.CharacterRemoving:Connect(function()
+		data.Character = nil
+		data.Humanoid = nil
+		data.Root = nil
+	end)
 end
 
-return PlayerHandler
+function Handler:Remove(player: Player)
+	self.Players[player] = nil
+end
+
+function Handler:GetPlayers()
+	return self.Players
+end
+
+return Handler
