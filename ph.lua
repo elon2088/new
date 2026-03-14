@@ -1,63 +1,22 @@
--- PlayerHandler.lua
--- Responsible only for managing players
-
 local Players = game:GetService("Players")
 
-export type PlayerData = {
-	Player: Player,
-	Character: Model?,
-	Humanoid: Humanoid?,
-	Root: BasePart?
-}
+local PlayerHandler = {}
+PlayerHandler.__index = PlayerHandler
 
-local Handler = {}
-Handler.__index = Handler
+PlayerHandler.PlayerAdded = Instance.new("BindableEvent")
+PlayerHandler.PlayerRemoving = Instance.new("BindableEvent")
 
-function Handler.new()
-	local self = setmetatable({}, Handler)
-	self.Players = {}
-	return self
+function PlayerHandler:GetPlayers()
+    return Players:GetPlayers()
 end
 
-function Handler:Track(player: Player)
-	if player == Players.LocalPlayer then
-		return
-	end
 
-	local data: PlayerData = {
-		Player = player,
-		Character = nil,
-		Humanoid = nil,
-		Root = nil
-	}
+Players.PlayerAdded:Connect(function(player)
+    PlayerHandler.PlayerAdded:Fire(player)
+end)
 
-	self.Players[player] = data
+Players.PlayerRemoving:Connect(function(player)
+    PlayerHandler.PlayerRemoving:Fire(player)
+end)
 
-	local function characterAdded(char: Model)
-		data.Character = char
-		data.Humanoid = char:WaitForChild("Humanoid",5)
-		data.Root = char:WaitForChild("HumanoidRootPart",5)
-	end
-
-	if player.Character then
-		characterAdded(player.Character)
-	end
-
-	player.CharacterAdded:Connect(characterAdded)
-
-	player.CharacterRemoving:Connect(function()
-		data.Character = nil
-		data.Humanoid = nil
-		data.Root = nil
-	end)
-end
-
-function Handler:Remove(player: Player)
-	self.Players[player] = nil
-end
-
-function Handler:GetPlayers()
-	return self.Players
-end
-
-return Handler
+return PlayerHandler
