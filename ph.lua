@@ -1,3 +1,4 @@
+--// PlayerHandler (ph.lua)
 local PlayerHandler = {}
 
 function PlayerHandler.init(ctx)
@@ -11,7 +12,7 @@ function PlayerHandler.init(ctx)
 
     local function Add(player)
         if player == LocalPlayer then return end
-        boxes[player] = Box.new()
+        boxes[player] = Box.new(player.DisplayName)
     end
 
     local function Remove(player)
@@ -33,7 +34,7 @@ function PlayerHandler.init(ctx)
             if char and hum and hum.Health > 0 then
                 local pos, size = GetBoundingBox(char)
                 if pos then
-                    box:Update(pos, size, player.DisplayName)
+                    box:Update(pos, size)
                 else
                     box:Hide()
                 end
