@@ -1,5 +1,4 @@
--- PlayerHandler.lua
--- Responsible only for managing players
+
 
 local Players = game:GetService("Players")
 
