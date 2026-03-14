@@ -1,52 +1,42 @@
--- PlayerHandler.lua
--- Host on GitHub and loadstring() from your ESP loader
-
-local PlayerHandler = {}
-PlayerHandler.__index = PlayerHandler
-
--- Config
-PlayerHandler.Config = {
-    Enabled = true,
-    BoxColor = Color3.fromRGB(0, 170, 255),       -- cyan-blue from image
-    OutlineColor = Color3.fromRGB(0, 0, 0),
-    HealthBarColor = Color3.fromRGB(0, 255, 80),
-    HealthBarBGColor = Color3.fromRGB(180, 0, 0),
-    NameColor = Color3.fromRGB(255, 255, 255),
-    DistanceColor = Color3.fromRGB(200, 200, 200),
-    ToolColor = Color3.fromRGB(200, 200, 200),
-    TextSize = 13,
-    BoxThickness = 1.5,
-    OutlineThickness = 3,
-    HealthBarWidth = 3,
-    HealthBarOffset = 5,
-    MaxDistance = 1000,
-    TeamCheck = false,
-}
-
-function PlayerHandler.new()
-    return setmetatable({ Players = {} }, PlayerHandler)
+-- ==================== PLAYER HANDLER (GitHub-stable) ====================
+local function initPlayerHandler()
+	-- Add existing players
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer then
+			espCache[plr] = createESP()
+		end
+	end
+	
+	-- PlayerAdded
+	Players.PlayerAdded:Connect(function(plr)
+		if plr ~= LocalPlayer then
+			espCache[plr] = createESP()
+		end
+	end)
+	
+	-- PlayerRemoving + cleanup
+	Players.PlayerRemoving:Connect(function(plr)
+		if espCache[plr] then
+			local obj = espCache[plr]
+			for _, v in pairs(obj) do
+				if typeof(v) == "table" then
+					for __, line in ipairs(v) do
+						if line and line.Destroy then line:Destroy() end
+					end
+				elseif v and v.Destroy then
+					v:Destroy()
+				end
+			end
+			espCache[plr] = nil
+		end
+	end)
 end
 
-function PlayerHandler:Add(player)
-    if not self.Players[player] then
-        self.Players[player] = true
-    end
-end
+-- ==================== MAIN LOOP ====================
+initPlayerHandler()
 
-function PlayerHandler:Remove(player)
-    self.Players[player] = nil
-end
-
-function PlayerHandler:GetAll()
-    local list = {}
-    for p in pairs(self.Players) do
-        list[#list + 1] = p
-    end
-    return list
-end
-
-function PlayerHandler:Clear()
-    self.Players = {}
-end
-
-return PlayerHandler
+RunService.RenderStepped:Connect(function()
+	for player, objects in pairs(espCache) do
+		updateESP(player, objects)
+	end
+end)
