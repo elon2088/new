@@ -1,4 +1,3 @@
---// PlayerHandler (ph.lua)
 local PlayerHandler = {}
 
 function PlayerHandler.init(ctx)
